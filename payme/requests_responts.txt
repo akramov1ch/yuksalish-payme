@@ -1,0 +1,416 @@
+# ====================================================================
+# Metod: CheckPerformTransaction
+# Tavsif: Talaba haqida to'liq ma'lumot olish va to'lovga tayyorgarlik.
+# ====================================================================
+
+# --- Holat: Muvaffaqiyatli ---
+request
+{
+    "jsonrpc": "2.0",
+    "id": 1001,
+    "method": "CheckPerformTransaction",
+    "params": {
+        "amount": 300000,
+        "account": {
+            "id": "YM19857"
+        }
+    }
+}
+
+response
+{
+    "jsonrpc": "2.0",
+    "id": 1001,
+    "result": {
+        "allow": true,
+        "additional": {
+            "full_name": "Farrux Akmalov Akbarovich",
+            "parent_name": "Akbarov O.",
+            "branch_name": "Chirchiq filiali",
+            "group_name": "Frontend Guruh 7",
+            "group_number": "7",
+            "amount_to_pay": 300000,
+            "mfo_code": "00450",
+            "account_number": "20206000100200300400"
+        }
+    }
+}
+
+# --- Holat: Xatolik (Foydalanuvchi topilmadi) ---
+request
+{
+    "jsonrpc": "2.0",
+    "id": 7001,
+    "method": "CheckPerformTransaction",
+    "params": {
+        "amount": 300000,
+        "account": {
+            "id": "YM00000"
+        }
+    }
+}
+
+response
+{
+    "jsonrpc": "2.0",
+    "id": 7001,
+    "error": {
+        "code": -31050,
+        "message": {
+            "ru": "Пользователь не найден",
+            "uz": "Foydalanuvchi topilmadi",
+            "en": "User not found"
+        },
+        "data": "account"
+    }
+}
+
+# ====================================================================
+# Metod: CreateTransaction
+# Tavsif: Yangi tranzaksiya yaratadi. Javobda `receivers` massiv bo'ladi.
+# ====================================================================
+
+# --- Holat: Muvaffaqiyatli ---
+request
+{
+    "jsonrpc": "2.0",
+    "id": 2001,
+    "method": "CreateTransaction",
+    "params": {
+        "id": "5305e3bab097f420a62ced0b",
+        "time": 1399114284039,
+        "amount": 500000,
+        "account": {
+            "id": "YM19857"
+        }
+    }
+}
+
+response
+{
+    "jsonrpc": "2.0",
+    "id": 2001,
+    "result": {
+        "create_time": 1399114284039,
+        "transaction": "1",
+        "state": 1,
+        "receivers": [
+            {
+                "id": "4215e6bab097f420a62ced01",
+                "amount": 500000
+            }
+        ]
+    }
+}
+
+# --- Holat: Xatolik (Noto'g'ri summa) ---
+request
+{
+    "jsonrpc": "2.0",
+    "id": 7003,
+    "method": "CreateTransaction",
+    "params": {
+        "id": "5305e3bab097f420a62ced0c",
+        "time": 1399114284040,
+        "amount": -5000,
+        "account": {
+            "id": "YM19857"
+        }
+    }
+}
+
+response
+{
+    "jsonrpc": "2.0",
+    "id": 7003,
+    "error": {
+        "code": -31001,
+        "message": {
+            "ru": "Неверная сумма",
+            "uz": "Summa noto'g'ri",
+            "en": "Invalid amount"
+        }
+    }
+}
+
+# ====================================================================
+# Metod: PerformTransaction
+# Tavsif: Tranzaksiyani bajaradi. state 1 -> 2 bo'ladi.
+# ====================================================================
+
+# --- Holat: Muvaffaqiyatli ---
+request
+{
+    "jsonrpc": "2.0",
+    "id": 3001,
+    "method": "PerformTransaction",
+    "params": {
+        "id": "5305e3bab097f420a62ced0b"
+    }
+}
+
+response
+{
+    "jsonrpc": "2.0",
+    "id": 3001,
+    "result": {
+        "transaction": "1",
+        "perform_time": 1399114285002,
+        "state": 2
+    }
+}
+
+# --- Holat: Xatolik (Operatsiyani bajarib bo'lmadi) ---
+# (allaqachon bajarilgan tranzaksiyani qayta bajarishga urinish)
+request
+{
+    "jsonrpc": "2.0",
+    "id": 7004,
+    "method": "PerformTransaction",
+    "params": {
+        "id": "5305e3bab097f420a62ced0b"
+    }
+}
+
+response
+{
+    "jsonrpc": "2.0",
+    "id": 7004,
+    "error": {
+        "code": -31008,
+        "message": {
+            "ru": "Невозможно выполнить операцию",
+            "uz": "Ushbu operatsiyani bajarib bo'lmadi",
+            "en": "Could not perform this operation"
+        }
+    }
+}
+
+# ====================================================================
+# Metod: CancelTransaction
+# Tavsif: Tranzaksiyani bekor qiladi. state 1 -> -1 bo'ladi.
+# ====================================================================
+
+# --- Holat: Muvaffaqiyatli ---
+request
+{
+    "jsonrpc": "2.0",
+    "id": 4001,
+    "method": "CancelTransaction",
+    "params": {
+        "id": "5305e3bab097f420a62ced0b",
+        "reason": 3
+    }
+}
+
+response
+{
+    "jsonrpc": "2.0",
+    "id": 4001,
+    "result": {
+        "transaction": "1",
+        "cancel_time": 1399114286005,
+        "state": -1
+    }
+}
+
+# --- Holat: Xatolik (Tranzaksiyani bekor qilib bo'lmaydi) ---
+# (allaqachon bajarilgan tranzaksiyani bekor qilishga urinish)
+request
+{
+    "jsonrpc": "2.0",
+    "id": 7005,
+    "method": "CancelTransaction",
+    "params": {
+        "id": "5305e3bab097f420a62ced0b",
+        "reason": 1
+    }
+}
+
+response
+{
+    "jsonrpc": "2.0",
+    "id": 7005,
+    "error": {
+        "code": -31007,
+        "message": {
+            "ru": "Заказ выполнен. Невозможно отменить транзакцию.",
+            "uz": "Tranzaksiyani bekor qilib bo'lmaydi",
+            "en": "The transaction cannot be cancelled"
+        }
+    }
+}
+
+# ====================================================================
+# Metod: CheckTransaction
+# ====================================================================
+
+# --- Holat: Muvaffaqiyatli ---
+request
+{
+    "jsonrpc": "2.0",
+    "id": 5001,
+    "method": "CheckTransaction",
+    "params": {
+        "id": "5305e3bab097f420a62ced0b"
+    }
+}
+
+response
+{
+    "jsonrpc": "2.0",
+    "id": 5001,
+    "result": {
+        "create_time": 1399114284039,
+        "perform_time": 1399114285002,
+        "cancel_time": 0,
+        "transaction": "1",
+        "state": 2,
+        "reason": null
+    }
+}
+
+# --- Holat: Xatolik (Tranzaksiya topilmadi) ---
+request
+{
+    "jsonrpc": "2.0",
+    "id": 7002,
+    "method": "CheckTransaction",
+    "params": {
+        "id": "0000e3bab097f420a62ced00"
+    }
+}
+
+response
+{
+    "jsonrpc": "2.0",
+    "id": 7002,
+    "error": {
+        "code": -31003,
+        "message": {
+            "ru": "Транзакция не найдена",
+            "uz": "Tranzaksiya topilmadi",
+            "en": "Transaction not found"
+        }
+    }
+}
+
+# ====================================================================
+# Metod: GetStatement
+# Tavsif: Tranzaksiyalar ro'yxatini oladi.
+# ====================================================================
+
+# --- Holat: Muvaffaqiyatli (tranzaksiya topilganda) ---
+request
+{
+    "jsonrpc": "2.0",
+    "id": 6001,
+    "method": "GetStatement",
+    "params": {
+        "from": 1399114284039,
+        "to": 1399120284000
+    }
+}
+
+response
+{
+    "jsonrpc": "2.0",
+    "id": 6001,
+    "result": {
+        "transactions": [
+            {
+                "id": "5305e3bab097f420a62ced0b",
+                "time": 1399114284039,
+                "amount": 500000,
+                "account": {
+                    "id": "YM19857"
+                },
+                "create_time": 1399114284039,
+                "perform_time": 1399114285002,
+                "cancel_time": 0,
+                "transaction": "1",
+                "state": 2,
+                "reason": null,
+                "receivers": [
+                    {
+                        "id": "4215e6bab097f420a62ced01",
+                        "amount": 500000
+                    }
+                ]
+            }
+        ]
+    }
+}
+
+# --- Holat: Muvaffaqiyatli (tranzaksiya topilmaganda) ---
+request
+{
+    "jsonrpc": "2.0",
+    "id": 6002,
+    "method": "GetStatement",
+    "params": {
+        "from": 1400000000000,
+        "to": 1400000000001
+    }
+}
+
+response
+{
+    "jsonrpc": "2.0",
+    "id": 6002,
+    "result": {
+        "transactions": []
+    }
+}
+
+# ====================================================================
+# Umumiy xatoliklar
+# ====================================================================
+
+# --- Holat: Xatolik (Metod topilmadi) ---
+request
+{
+    "jsonrpc": "2.0",
+    "id": 7006,
+    "method": "NonExistentMethod",
+    "params": {}
+}
+
+response
+{
+    "jsonrpc": "2.0",
+    "id": 7006,
+    "error": {
+        "code": -32601,
+        "message": {
+            "ru": "Метод не найден",
+            "uz": "Metod topilmadi",
+            "en": "Method not found"
+        }
+    }
+}
+
+# --- Holat: Xatolik (Noto'g'ri parametrlar) ---
+request
+{
+    "jsonrpc": "2.0",
+    "id": 7007,
+    "method": "CheckPerformTransaction",
+    "params": {
+        "amount": 300000
+    }
+}
+
+response
+{
+    "jsonrpc": "2.0",
+    "id": 7007,
+    "error": {
+        "code": -32602,
+        "message": {
+            "ru": "Неверные параметры",
+            "uz": "Parametrlar noto'g'ri",
+            "en": "Invalid params"
+        }
+    }
+}

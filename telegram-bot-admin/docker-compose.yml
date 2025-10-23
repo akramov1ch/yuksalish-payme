@@ -1,0 +1,82 @@
+
+networks:
+  yuksalish-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: yuksalish-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: schooladmin
+      POSTGRES_PASSWORD: strongpassword123
+      POSTGRES_DB: schooldb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U schooladmin -d schooldb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - yuksalish-net
+
+  payme-service:
+    build:
+      context: ./payme
+      dockerfile: Dockerfile
+    container_name: payme-service
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy 
+    environment:
+      - DATABASE_URL=postgres://schooladmin:strongpassword123@db:5432/schooldb?sslmode=disable
+      - APP_PORT=9000
+      - BOT_GRPC_SERVICE_ADDR=telegram-bot:50051
+    networks:
+      - yuksalish-net
+    ports:
+      - "9000:9000" 
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    restart: unless-stopped
+    depends_on:
+      - payme-service 
+    ports:
+      - "8443:8443"
+    environment:
+      - PAYME_GRPC_SERVICE_ADDR=payme-service:9000
+      - API_GATEWAY_PORT=8443
+      - CERT_FILE_PATH=cert.pem
+      - KEY_FILE_PATH=key.pem
+      - PAYME_LOGIN=Paycom
+      - PAYME_PASSWORD=4xVqGAIFq72Xan13z8UAIeV&jT2tT&J5kmxP
+    networks:
+      - yuksalish-net
+
+  telegram-bot:
+    platform: linux/amd64  
+    build:
+      context: ./telegram-bot-admin
+      dockerfile: Dockerfile
+    container_name: telegram-bot
+    restart: unless-stopped
+    depends_on:
+      - payme-service 
+    env_file:
+      - ./telegram-bot-admin/.env
+    volumes:
+      - ./telegram-bot-admin/database_files:/app/database_files
+    networks:
+      - yuksalish-net

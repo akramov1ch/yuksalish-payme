@@ -1,0 +1,13 @@
+CREATE TABLE IF NOT EXISTS transactions (
+    id BIGSERIAL PRIMARY KEY, 
+    payme_tx_id VARCHAR(255) UNIQUE NOT NULL, 
+    student_id UUID NOT NULL REFERENCES students(id),
+    amount BIGINT NOT NULL,
+    create_time BIGINT NOT NULL,
+    perform_time BIGINT DEFAULT 0,
+    cancel_time BIGINT DEFAULT 0,
+    state INT NOT NULL,
+    reason INT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
