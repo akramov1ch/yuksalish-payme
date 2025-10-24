@@ -1,7 +1,7 @@
 package grpc_client
 
 import (
-	"genproto/payment"
+	"api-gateway/genproto/payment"
 	"log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

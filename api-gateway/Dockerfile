@@ -1,37 +1,29 @@
+# 1-BOSQICH: Build qilish uchun muhit
 FROM golang:1.25-alpine AS builder
-
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirror.leaseweb.com/g' /etc/apk/repositories
-
-RUN apk update && apk add --no-cache git protobuf-dev build-base
-
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.32
-RUN go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3
 
 WORKDIR /app
 
+# Bog'liqlik fayllarini nusxalash
+COPY go.mod go.sum ./
+
+# Vendor papkasini Docker ichida yaratish. Bu har doim to'g'ri ishlashini ta'minlaydi.
+RUN go mod vendor
+
+# Qolgan barcha kodlarni nusxalash
 COPY . .
 
-RUN mkdir -p genproto/payment && \
-    protoc --proto_path=protos \
-    --go_out=./genproto/payment --go_opt=paths=source_relative \
-    --go-grpc_out=./genproto/payment --go-grpc_opt=paths=source_relative \
-    protos/payment.proto
+# Build qilishda -mod=vendor flag'idan foydalanamiz
+RUN go build -mod=vendor -ldflags="-w -s" -o /bin/api-gateway ./cmd/api
 
-RUN cd genproto && go mod init genproto
 
-ENV GOPROXY=direct
-
-RUN go mod tidy
-RUN go mod download
-
-RUN go build -ldflags="-w -s" -o /bin/api-gateway ./cmd/api
-
+# 2-BOSQICH: Yakuniy image'ni yaratish
 FROM alpine:latest
 
 RUN apk update && apk add --no-cache ca-certificates
 
 WORKDIR /app
 
+# Build qilingan dasturni va faqat kerakli fayllarni nusxalash
 COPY --from=builder /bin/api-gateway .
 COPY .env .
 COPY cert.pem .

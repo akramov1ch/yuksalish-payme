@@ -8,6 +8,7 @@ import logging
 import io
 import openpyxl
 import pandas as pd
+from . import states
 
 logger = logging.getLogger(__name__)
 super_admin_id = settings.super_admin_id
@@ -49,6 +50,7 @@ def start(update: Update, context: CallbackContext):
         ["🏢 Filiallar", "🎓 O'quvchilar"],
         ["➕ Filial qo'shish", "👤 O'quvchi qo'shish"],
         ["🗑 Filialni o'chirish", "🗑 O'quvchini o'chirish"],
+        ["🔄 Statusni o'zgartirish"],
         ["📤 O'quvchilarni import qilish"],
         ["⚙️ Adminlar"]
     ]
@@ -64,9 +66,8 @@ def cancel(update: Update, context: CallbackContext):
 
 @admin_required
 def upload_students_start(update: Update, context: CallbackContext):
-    from .core import PROCESSING_EXCEL_FILE
-    update.message.reply_text("O'quvchilarni ommaviy qo'shish/o'chirish uchun Excel faylini yuboring.", reply_markup=get_back_keyboard())
-    return PROCESSING_EXCEL_FILE
+    update.message.reply_text("O'quvchilarni ommaviy boshqarish uchun Excel faylini yuboring.", reply_markup=get_back_keyboard())
+    return states.PROCESSING_EXCEL_FILE
 
 def process_excel_file(update: Update, context: CallbackContext):
     if update.message.text and update.message.text == "⬅️ Orqaga":
@@ -76,62 +77,41 @@ def process_excel_file(update: Update, context: CallbackContext):
         file = context.bot.get_file(update.message.document.file_id)
         file_content = file.download_as_bytearray()
         
-        file_path = "Reestr.xlsx"
-        with open(file_path, "wb") as f:
-            f.write(file_content)
+        update.message.reply_text("⏳ Fayl qabul qilindi. Ma'lumotlar tahlil qilinmoqda...")
         
-        update.message.reply_text("⏳ Fayl qabul qilindi. Barcha jadvallar qayta ishlanmoqda...")
-        logger.info(f"Excel fayl '{file_path}' sifatida saqlandi va o'qilmoqda.")
-
-        workbook = openpyxl.load_workbook(file_path, data_only=True)
+        workbook = openpyxl.load_workbook(io.BytesIO(file_content), data_only=True)
         
         students_from_excel = []
-        
         for config in EXCEL_CONFIGS:
-            sheet_index = config["sheet_index"]
-            start_row = config["start_row"]
-            col_indices = config["columns"]
-
-            if len(workbook.worksheets) <= sheet_index:
-                logger.warning(f"Konfiguratsiyada ko'rsatilgan {sheet_index}-indeksdagi jadval faylda mavjud emas. O'tkazib yuborildi.")
+            if len(workbook.worksheets) <= config["sheet_index"]:
                 continue
-                
-            sheet = workbook.worksheets[sheet_index]
-            logger.info(f"'{sheet.title}' nomli {sheet_index}-indeksdagi jadval o'qilmoqda...")
-
-            for row_index in range(start_row + 1, sheet.max_row + 1):
+            sheet = workbook.worksheets[config["sheet_index"]]
+            logger.info(f"'{sheet.title}' nomli jadval o'qilmoqda...")
+            
+            col_indices = config["columns"]
+            for row_index in range(config["start_row"] + 1, sheet.max_row + 1):
                 row_values = [cell.value for cell in sheet[row_index]]
-                
-                if not any(row_values):
+                if not any(row_values) or not row_values[col_indices["student_name"]]:
                     continue
                 
-                student_name_cell = row_values[col_indices["student_name"]]
-                if not student_name_cell or not str(student_name_cell).strip():
-                    continue
-
                 discount_value = row_values[col_indices["discount"]]
                 try:
-                    if isinstance(discount_value, str):
-                        discount_str = discount_value.replace('%', '').strip()
-                        final_discount = float(discount_str or 0)
-                    else:
-                        final_discount = float(discount_value or 0)
+                    final_discount = float(str(discount_value).replace('%', '').strip() or 0)
                 except (ValueError, TypeError):
                     final_discount = 0.0
 
-                processed_row = {
+                students_from_excel.append({
                     'branch_name': str(row_values[col_indices["branch_name"]] or '').strip(),
-                    'student_name': str(student_name_cell).strip(),
+                    'contract_number': str(row_values[col_indices["contract_number"]] or '').strip(),
+                    'student_name': str(row_values[col_indices["student_name"]]).strip(),
                     'class': str(row_values[col_indices["class"]] or '').strip(),
                     'parent_name': str(row_values[col_indices["parent_name"]] or '').strip(),
                     'phone': str(row_values[col_indices["phone"]] or '').strip(),
                     'discount': final_discount,
                     'status': str(row_values[col_indices["status"]] or '').strip().lower(),
-                }
-                students_from_excel.append(processed_row)
+                })
         
         logger.info(f"Barcha jadvallardan jami {len(students_from_excel)} ta yozuv o'qildi.")
-        
         if not students_from_excel:
             update.message.reply_text("Faylda qayta ishlash uchun ma'lumotlar topilmadi.")
             return cancel(update, context)
@@ -144,140 +124,109 @@ def process_excel_file(update: Update, context: CallbackContext):
             return cancel(update, context)
 
         branch_map_by_name = {b.name.strip().lower(): b.id for b in all_branches}
-        existing_students_map = {
-            (s.branch_id, s.full_name.strip(), s.parent_name.strip(), s.group_name.strip(), s.phone.strip()): s.account_id
-            for s in all_students
-        }
+        existing_students_map = {(s.branch_id, s.full_name.strip(), s.parent_name.strip()): s for s in all_students}
 
         students_to_add = []
-        account_ids_to_delete = []
+        students_to_update = []
         report_data = []
 
         for student_row in students_from_excel:
-            report_row = {
-                "Maktab (fillial nomi)": student_row['branch_name'],
-                "O'quvchi F.I.Sh.": student_row['student_name'],
-                "O'quvchi Sinf": student_row['class'],
-                "Ota-onasi F.I.Sh.": student_row['parent_name'],
-                "Ota-onasi Telefon": student_row['phone'],
-                "Shartnoma Chegirma": student_row['discount'],
-                "Shartnoma Status": student_row['status']
-            }
+            report_row = student_row.copy()
             
-            branch_name = student_row.get("branch_name", "")
-            student_name = student_row.get("student_name", "")
-            parent_name = student_row.get("parent_name", "")
-            class_num = student_row.get("class", "")
-            phone = student_row.get("phone", "")
-            status = student_row.get("status", "")
-            discount = student_row.get("discount", 0.0)
-
-            branch_id = branch_map_by_name.get(branch_name.lower())
+            branch_id = branch_map_by_name.get(student_row['branch_name'].lower())
             if not branch_id:
-                report_row["Qayta ishlash statusi"] = f"Xatolik: '{branch_name}' filiali topilmadi"
+                report_row["Qayta ishlash statusi"] = f"Xatolik: '{student_row['branch_name']}' filiali topilmadi"
                 report_data.append(report_row)
                 continue
 
-            group_name = f"{class_num}-sinf"
-            student_key = (branch_id, student_name, parent_name, group_name, phone)
-            student_exists = student_key in existing_students_map
+            student_key = (branch_id, student_row['student_name'], student_row['parent_name'])
+            existing_student = existing_students_map.get(student_key)
+            
+            is_active_in_excel = (student_row['status'] == 'amalda')
 
-            if status == 'amalda':
-                if not student_exists:
-                    students_to_add.append({
-                        'branch_id': branch_id, 
-                        'full_name': student_name, 
-                        'parent_name': parent_name,
-                        'group_name': group_name, 
-                        'phone': phone, 
-                        'discount_percent': discount
-                    })
-                    report_row["Qayta ishlash statusi"] = "Qo'shishga tayyorlandi"
-                else:
-                    report_row["Account ID"] = existing_students_map.get(student_key, '')
-                    report_row["Qayta ishlash statusi"] = "O'zgarishsiz (allaqachon mavjud)"
-            elif status == 'bekor':
-                if student_exists:
-                    account_id_to_del = existing_students_map[student_key]
-                    account_ids_to_delete.append(account_id_to_del)
-                    report_row["Account ID"] = account_id_to_del
-                    report_row["Qayta ishlash statusi"] = "O'chirishga tayyorlandi"
-                else:
-                    report_row["Qayta ishlash statusi"] = "O'zgarishsiz (o'chirish uchun topilmadi)"
+            if not existing_student:
+                students_to_add.append({**student_row, 'branch_id': branch_id, 'group_name': f"{student_row['class']}-sinf"})
+                report_row["Qayta ishlash statusi"] = "Qo'shishga tayyorlandi"
+            elif existing_student.status != is_active_in_excel:
+                students_to_update.append({'student': existing_student, 'new_status': is_active_in_excel})
+                report_row["Account ID"] = existing_student.account_id
+                report_row["Qayta ishlash statusi"] = "Statusni yangilashga tayyorlandi"
             else:
-                report_row["Account ID"] = existing_students_map.get(student_key, '')
-                report_row["Qayta ishlash statusi"] = f"O'zgarishsiz (status '{status}' noto'g'ri)"
+                report_row["Account ID"] = existing_student.account_id
+                report_row["Qayta ishlash statusi"] = "O'zgarishsiz"
             
             report_data.append(report_row)
         
-        logger.info(f"Fayl tahlili yakunlandi. Qo'shish uchun: {len(students_to_add)} ta. O'chirish uchun: {len(account_ids_to_delete)} ta.")
+        logger.info(f"Tahlil yakunlandi. Qo'shish uchun: {len(students_to_add)}, Yangilash uchun: {len(students_to_update)}")
 
         if students_to_add:
-            created_students, err = grpc_client.create_students_batch(students_to_add)
+            add_batch_data = [
+                {
+                    'branch_id': s['branch_id'], 'full_name': s['student_name'], 'parent_name': s['parent_name'],
+                    'group_name': s['group_name'], 'phone': s['phone'], 'discount_percent': s['discount'],
+                    'contract_number': s['contract_number']
+                } for s in students_to_add
+            ]
+            created_students, err = grpc_client.create_students_batch(add_batch_data)
             if err:
                 update.message.reply_text(f"❌ O'quvchilarni ommaviy qo'shishda xatolik: {err}")
             else:
-                created_map = {
-                    (s.branch_id, s.full_name.strip(), s.parent_name.strip(), s.group_name.strip(), s.phone.strip()): s.account_id
-                    for s in created_students
-                }
-                for row_dict in report_data:
-                    if row_dict.get("Qayta ishlash statusi") == "Qo'shishga tayyorlandi":
-                        class_num_val = row_dict.get("O'quvchi Sinf")
-                        key = (
-                            branch_map_by_name.get(row_dict.get("Maktab (fillial nomi)", "").lower()),
-                            row_dict.get("O'quvchi F.I.Sh."),
-                            row_dict.get("Ota-onasi F.I.Sh."),
-                            f"{class_num_val}-sinf" if class_num_val else "",
-                            row_dict.get("Ota-onasi Telefon")
-                        )
-                        if key in created_map:
-                            row_dict["Account ID"] = created_map[key]
-                            row_dict["Qayta ishlash statusi"] = "✅ Muvaffaqiyatli qo'shildi"
+                created_map = {(s.branch_id, s.full_name.strip(), s.parent_name.strip()): s for s in created_students}
+                for i, report_row in enumerate(report_data):
+                    if report_row.get("Qayta ishlash statusi") == "Qo'shishga tayyorlandi":
+                        original_row = students_from_excel[i]
+                        key = (branch_map_by_name.get(original_row['branch_name'].lower()), original_row['student_name'], original_row['parent_name'])
+                        created = created_map.get(key)
+                        if created:
+                            report_row["Account ID"] = created.account_id
+                            report_row["Qayta ishlash statusi"] = "✅ Muvaffaqiyatli qo'shildi"
+                            if original_row['status'] == 'bekor':
+                                students_to_update.append({'student': created, 'new_status': False})
                         else:
-                            row_dict["Qayta ishlash statusi"] = "❌ Qo'shishda xatolik"
-        
-        if account_ids_to_delete:
-            success, err = grpc_client.delete_students_batch(account_ids_to_delete)
-            if err:
-                update.message.reply_text(f"❌ O'quvchilarni ommaviy o'chirishda xatolik: {err}")
-            else:
-                for row_dict in report_data:
-                    if row_dict.get("Qayta ishlash statusi") == "O'chirishga tayyorlandi":
-                        row_dict["Qayta ishlash statusi"] = "✅ Muvaffaqiyatli o'chirildi"
+                            report_row["Qayta ishlash statusi"] = "❌ Qo'shishda xatolik"
 
-        if not report_data:
-            update.message.reply_text("Faylda qayta ishlash uchun yangi ma'lumotlar topilmadi yoki barcha ma'lumotlar allaqachon bazada mavjud.")
-            return cancel(update, context)
-        
-        final_columns = [
-            "Maktab (fillial nomi)",
-            "O'quvchi F.I.Sh.",
-            "O'quvchi Sinf",
-            "Account ID",
-        ]
-        full_df = pd.DataFrame(report_data)
-        result_df = full_df.reindex(columns=final_columns)
-        
-        output_file = io.BytesIO()
-        with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-            result_df.to_excel(writer, index=False, sheet_name='Natijalar')
-        
-        output_file.seek(0)
+        if students_to_update:
+            update_count = 0
+            for item in students_to_update:
+                s_obj = item['student']
+                s_data = {
+                    'id': s_obj.id, 'account_id': s_obj.account_id, 'branch_id': s_obj.branch_id,
+                    'parent_name': s_obj.parent_name, 'discount_percent': s_obj.discount_percent,
+                    'balance': s_obj.balance, 'full_name': s_obj.full_name,
+                    'group_name': s_obj.group_name, 'phone': s_obj.phone,
+                    'contract_number': s_obj.contract_number, 'status': item['new_status']
+                }
+                updated, err = grpc_client.update_student(s_data)
+                if err:
+                    logger.error(f"O'quvchi {s_obj.account_id} statusini yangilashda xatolik: {err}")
+                else:
+                    update_count += 1
+                    for report_row in report_data:
+                        if report_row.get("Account ID") == updated.account_id:
+                            status_text = "✅ Faollashtirildi" if updated.status else "✅ Nofaollashtirildi"
+                            report_row["Qayta ishlash statusi"] = status_text
+                            break
+            logger.info(f"{update_count} ta o'quvchi statusi muvaffaqiyatli yangilandi.")
 
-        update.message.reply_document(
-            document=output_file,
-            filename='qayta_ishlash_natijalari.xlsx',
-            caption="✅ Bajarildi! Natijalar bilan tanishish uchun quyidagi faylni yuklab oling."
-        )
-    
+        update.message.reply_text(f"✅ Bajarildi! Qo'shildi: {len(students_to_add)}, Statusi yangilandi: {len(students_to_update)}.")
+        
+        if report_data:
+            df = pd.DataFrame(report_data)
+            output_file = io.BytesIO()
+            with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Natijalar')
+            output_file.seek(0)
+            update.message.reply_document(
+                document=output_file,
+                filename='qayta_ishlash_natijalari.xlsx',
+                caption="To'liq hisobot bilan tanishish uchun faylni yuklab oling."
+            )
+
     except Exception as e:
         logger.error(f"Excel faylni qayta ishlashda kutilmagan xatolik: {e}", exc_info=True)
         update.message.reply_text(f"❌ Faylni qayta ishlashda kutilmagan xatolik yuz berdi: {e}")
     
-    start(update, context)
-    return ConversationHandler.END
-
+    return cancel(update, context)
 
 
 @admin_required
@@ -300,37 +249,32 @@ def list_branches(update: Update, context: CallbackContext):
 
 @admin_required
 def add_branch_start(update: Update, context: CallbackContext):
-    from .core import BRANCH_NAME
     update.message.reply_text("Yangi filial nomini kiriting:", reply_markup=get_back_keyboard())
-    return BRANCH_NAME
+    return states.BRANCH_NAME
 
 def get_branch_name(update: Update, context: CallbackContext):
-    from .core import BRANCH_FEE
     if update.message.text == "⬅️ Orqaga": return cancel(update, context)
     context.user_data['branch_name'] = update.message.text
     update.message.reply_text("Filial uchun oylik to'lov miqdorini kiriting (faqat raqam, masalan: 300000):", reply_markup=get_back_keyboard())
-    return BRANCH_FEE
+    return states.BRANCH_FEE
 
 def get_branch_fee(update: Update, context: CallbackContext):
-    from .core import BRANCH_MFO
     if update.message.text == "⬅️ Orqaga": return cancel(update, context)
     context.user_data['branch_fee'] = update.message.text
     update.message.reply_text("Bank MFO kodini kiriting (masalan, 00450):", reply_markup=get_back_keyboard())
-    return BRANCH_MFO
+    return states.BRANCH_MFO
 
 def get_branch_mfo(update: Update, context: CallbackContext):
-    from .core import BRANCH_ACC
     if update.message.text == "⬅️ Orqaga": return cancel(update, context)
     context.user_data['branch_mfo'] = update.message.text
     update.message.reply_text("Bank hisob raqamini kiriting (masalan, 20206000100200300400):", reply_markup=get_back_keyboard())
-    return BRANCH_ACC
+    return states.BRANCH_ACC
 
 def get_branch_account(update: Update, context: CallbackContext):
-    from .core import BRANCH_MERCHANT
     if update.message.text == "⬅️ Orqaga": return cancel(update, context)
     context.user_data['branch_account'] = update.message.text
     update.message.reply_text("To'lov tizimi uchun Merchant ID'ni kiriting:", reply_markup=get_back_keyboard())
-    return BRANCH_MERCHANT
+    return states.BRANCH_MERCHANT
 
 def get_branch_merchant(update: Update, context: CallbackContext):
     if update.message.text == "⬅️ Orqaga": return cancel(update, context)
@@ -356,7 +300,6 @@ def get_branch_merchant(update: Update, context: CallbackContext):
 
 @admin_required
 def delete_branch_start(update: Update, context: CallbackContext):
-    from .core import DELETE_BRANCH_SELECT
     branches, error = grpc_client.list_branches()
     if error or not branches:
         update.message.reply_text("Filiallar topilmadi yoki xatolik yuz berdi.")
@@ -366,17 +309,16 @@ def delete_branch_start(update: Update, context: CallbackContext):
     branch_names = [branch.name for branch in branches]
     reply_markup = create_dynamic_keyboard(branch_names)
     update.message.reply_text("Qaysi filialni o'chirmoqchisiz?", reply_markup=reply_markup)
-    return DELETE_BRANCH_SELECT
+    return states.DELETE_BRANCH_SELECT
 
 def get_branch_to_delete(update: Update, context: CallbackContext):
-    from .core import DELETE_BRANCH_CONFIRM, DELETE_BRANCH_SELECT
     if update.message.text == "⬅️ Orqaga": return cancel(update, context)
     branch_name = update.message.text
     branches = context.user_data.get('branches_list', [])
     selected_branch = next((b for b in branches if b.name == branch_name), None)
     if not selected_branch:
         update.message.reply_text("Noto'g'ri filial tanlandi. Iltimos, qaytadan urinib ko'ring.")
-        return DELETE_BRANCH_SELECT
+        return states.DELETE_BRANCH_SELECT
     context.user_data['branch_to_delete_id'] = selected_branch.id
     context.user_data['branch_to_delete_name'] = selected_branch.name
     warning_text = (
@@ -389,10 +331,9 @@ def get_branch_to_delete(update: Update, context: CallbackContext):
     keyboard = [["✅ Ha, o'chirish", "❌ Yo'q, bekor qilish"], ["⬅️ Orqaga"]]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
     update.message.reply_text(warning_text, reply_markup=reply_markup, parse_mode='Markdown')
-    return DELETE_BRANCH_CONFIRM
+    return states.DELETE_BRANCH_CONFIRM
 
 def confirm_branch_delete(update: Update, context: CallbackContext):
-    from .core import DELETE_BRANCH_CONFIRM
     if update.message.text == "⬅️ Orqaga": return cancel(update, context)
     choice = update.message.text
     if "❌ Yo'q" in choice:
@@ -409,7 +350,7 @@ def confirm_branch_delete(update: Update, context: CallbackContext):
         start(update, context)
         return ConversationHandler.END
     update.message.reply_text("Iltimos, quyidagi tugmalardan birini tanlang.", reply_markup=get_back_keyboard())
-    return DELETE_BRANCH_CONFIRM
+    return states.DELETE_BRANCH_CONFIRM
 
 
 @admin_required
@@ -426,7 +367,8 @@ def list_students(update: Update, context: CallbackContext):
     message = "🎓 *Barcha o'quvchilar:*\n\n"
     for student in students:
         branch_name = branch_map.get(student.branch_id, "Noma'lum filial")
-        message += f"▪️ *{student.full_name}*\n"
+        status_text = "✅ Faol" if student.status else "❌ Nofaol"
+        message += f"▪️ *{student.full_name}* ({status_text})\n"
         message += f"   - Hisob raqami: `{student.account_id}`\n"
         message += f"   - Filial: {branch_name}\n"
         message += f"   - Guruh: {student.group_name}\n\n"
@@ -434,7 +376,6 @@ def list_students(update: Update, context: CallbackContext):
 
 @admin_required
 def add_student_start(update: Update, context: CallbackContext):
-    from .core import STUDENT_BRANCH
     branches, error = grpc_client.list_branches()
     if error or not branches:
         update.message.reply_text("Filiallar topilmadi yoki xatolik yuz berdi. Avval filial qo'shing.")
@@ -444,48 +385,43 @@ def add_student_start(update: Update, context: CallbackContext):
     branch_names = [branch.name for branch in branches]
     reply_markup = create_dynamic_keyboard(branch_names)
     update.message.reply_text("O'quvchi qaysi filialga tegishli ekanini tanlang:", reply_markup=reply_markup)
-    return STUDENT_BRANCH
+    return states.STUDENT_BRANCH
 
 def get_student_branch(update: Update, context: CallbackContext):
-    from .core import STUDENT_PARENT, STUDENT_BRANCH
     if update.message.text == "⬅️ Orqaga": return cancel(update, context)
     branch_name = update.message.text
     branches = context.user_data.get('branches_list', [])
     selected_branch = next((b for b in branches if b.name == branch_name), None)
     if not selected_branch:
         update.message.reply_text("Noto'g'ri filial tanlandi. Iltimos, qaytadan urinib ko'ring.")
-        return STUDENT_BRANCH
+        return states.STUDENT_BRANCH
     context.user_data['student_branch_id'] = selected_branch.id
     update.message.reply_text("Ota-onasining ismini kiriting (masalan, Olimov A.):", reply_markup=get_back_keyboard())
-    return STUDENT_PARENT
+    return states.STUDENT_PARENT
 
 def get_student_parent_name(update: Update, context: CallbackContext):
-    from .core import STUDENT_FULLNAME
     if update.message.text == "⬅️ Orqaga": return cancel(update, context)
     context.user_data['student_parent_name'] = update.message.text
     update.message.reply_text("O'quvchining to'liq F.I.Sh. ni kiriting:", reply_markup=get_back_keyboard())
-    return STUDENT_FULLNAME
+    return states.STUDENT_FULLNAME
 
 def get_student_full_name(update: Update, context: CallbackContext):
-    from .core import STUDENT_GROUP_NAME
     if update.message.text == "⬅️ Orqaga": return cancel(update, context)
     context.user_data['student_full_name'] = update.message.text
     update.message.reply_text("O'quvchining guruh/sinf nomini kiriting (masalan, '7-sinf' yoki 'Frontend-dasturlash'):", reply_markup=get_back_keyboard())
-    return STUDENT_GROUP_NAME
+    return states.STUDENT_GROUP_NAME
 
 def get_student_group_name(update: Update, context: CallbackContext):
-    from .core import STUDENT_PHONE
     if update.message.text == "⬅️ Orqaga": return cancel(update, context)
     context.user_data['student_group_name'] = update.message.text
     update.message.reply_text("O'quvchining telefon raqamini kiriting (+998...):", reply_markup=get_back_keyboard())
-    return STUDENT_PHONE
+    return states.STUDENT_PHONE
 
 def get_student_phone(update: Update, context: CallbackContext):
-    from .core import STUDENT_DISCOUNT
     if update.message.text == "⬅️ Orqaga": return cancel(update, context)
     context.user_data['student_phone'] = update.message.text
     update.message.reply_text("Chegirma foizini kiriting (agar yo'q bo'lsa, 0 kiriting):", reply_markup=get_back_keyboard())
-    return STUDENT_DISCOUNT
+    return states.STUDENT_DISCOUNT
 
 def get_student_discount(update: Update, context: CallbackContext):
     if update.message.text == "⬅️ Orqaga": return cancel(update, context)
@@ -518,17 +454,15 @@ def get_student_discount(update: Update, context: CallbackContext):
 
 @admin_required
 def delete_student_start(update: Update, context: CallbackContext):
-    from .core import DELETE_STUDENT_ACCOUNT_ID
     update.message.reply_text("O'chiriladigan o'quvchining hisob raqamini kiriting (masalan, YM19857):", reply_markup=get_back_keyboard())
-    return DELETE_STUDENT_ACCOUNT_ID
+    return states.DELETE_STUDENT_ACCOUNT_ID
 
 def get_student_account_id_to_delete(update: Update, context: CallbackContext):
-    from .core import DELETE_STUDENT_ACCOUNT_ID
     if update.message.text == "⬅️ Orqaga": return cancel(update, context)
     account_id = update.message.text.strip()
     if not account_id.upper().startswith("YM"):
         update.message.reply_text("Noto'g'ri format. Hisob raqami 'YM' bilan boshlanishi kerak. Qaytadan kiriting:", reply_markup=get_back_keyboard())
-        return DELETE_STUDENT_ACCOUNT_ID
+        return states.DELETE_STUDENT_ACCOUNT_ID
     success, error = grpc_client.delete_student_by_account_id(account_id)
     if error:
         update.message.reply_text(f"❌ Xatolik: {error}")
@@ -536,6 +470,87 @@ def get_student_account_id_to_delete(update: Update, context: CallbackContext):
         update.message.reply_text(f"✅ O'quvchi (hisob raqami: {account_id}) muvaffaqiyatli o'chirildi.")
     start(update, context)
     return ConversationHandler.END
+
+@admin_required
+def change_status_start(update: Update, context: CallbackContext):
+    update.message.reply_text(
+        "Statusini o'zgartirmoqchi bo'lgan o'quvchining hisob raqamini (masalan, YM123456) kiriting:",
+        reply_markup=get_back_keyboard()
+    )
+    return states.CHANGE_STATUS_ACCOUNT_ID
+
+def get_student_for_status_change(update: Update, context: CallbackContext):
+    if update.message.text == "⬅️ Orqaga": return cancel(update, context)
+    
+    account_id = update.message.text.strip()
+    student, error = grpc_client.get_student_by_account_id(account_id)
+
+    if error or not student:
+        update.message.reply_text(f"❌ Xatolik: {error or 'O`quvchi topilmadi.'}\nQaytadan kiriting:")
+        return states.CHANGE_STATUS_ACCOUNT_ID
+
+    context.user_data['student_to_update'] = student
+    status_text = "✅ Faol" if student.status else "❌ Nofaol"
+    
+    message = (
+        f"O'quvchi topildi:\n\n"
+        f"👤 *F.I.Sh:* {student.full_name}\n"
+        f"🆔 *Hisob raqami:* `{student.account_id}`\n"
+        f"✳️ *Joriy holati:* {status_text}\n\n"
+        f"Yangi holatni tanlang:"
+    )
+    
+    keyboard = [
+        ["✅ Faollashtirish", "❌ Nofaollashtirish"],
+        ["⬅️ Orqaga"]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+    update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    return states.CONFIRM_STATUS_CHANGE
+
+def confirm_status_change(update: Update, context: CallbackContext):
+    if update.message.text == "⬅️ Orqaga": return cancel(update, context)
+    
+    choice = update.message.text
+    student_to_update = context.user_data.get('student_to_update')
+    
+    if not student_to_update:
+        update.message.reply_text("Xatolik yuz berdi. Iltimos, boshidan boshlang.")
+        return cancel(update, context)
+
+    new_status = None
+    if "✅ Faollashtirish" in choice:
+        new_status = True
+    elif "❌ Nofaollashtirish" in choice:
+        new_status = False
+    
+    if new_status is None:
+        update.message.reply_text("Iltimos, tugmalardan birini tanlang.")
+        return states.CONFIRM_STATUS_CHANGE
+
+    student_data = {
+        'id': student_to_update.id,
+        'account_id': student_to_update.account_id,
+        'branch_id': student_to_update.branch_id,
+        'parent_name': student_to_update.parent_name,
+        'discount_percent': student_to_update.discount_percent,
+        'balance': student_to_update.balance,
+        'full_name': student_to_update.full_name,
+        'group_name': student_to_update.group_name,
+        'phone': student_to_update.phone,
+        'contract_number': student_to_update.contract_number,
+        'status': new_status
+    }
+
+    updated_student, error = grpc_client.update_student(student_data)
+
+    if error:
+        update.message.reply_text(f"❌ Statusni yangilashda xatolik: {error}")
+    else:
+        status_text = "✅ Faol" if updated_student.status else "❌ Nofaol"
+        update.message.reply_text(f"✅ Muvaffaqiyatli! O'quvchi *{updated_student.full_name}* uchun yangi holat: *{status_text}*", parse_mode='Markdown')
+
+    return cancel(update, context)
 
 
 @admin_required

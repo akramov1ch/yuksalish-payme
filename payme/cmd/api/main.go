@@ -6,7 +6,7 @@ import (
 	"net"
 	"os"
 
-	"genproto/payment"
+	"payme/genproto/payment"
 	"payme/internal/config"
 	"payme/internal/grpc_server"
 	"payme/internal/repository"

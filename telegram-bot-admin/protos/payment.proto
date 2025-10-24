@@ -21,17 +21,14 @@ service ManagementService {
     rpc ListBranches(google.protobuf.Empty) returns (ListBranchesResponse);
     rpc UpdateBranch(Branch) returns (Branch);
     rpc DeleteBranch(ByIdRequest) returns (google.protobuf.Empty);
-
     rpc CreateStudent(CreateStudentRequest) returns (Student);
     rpc GetStudentByAccountId(ByAccountIdRequest) returns (Student);
     rpc ListStudents(ListRequest) returns (ListStudentsResponse);
     rpc UpdateStudent(Student) returns (Student);
     rpc DeleteStudentByAccountId(ByAccountIdRequest) returns (google.protobuf.Empty);
-
     rpc CreateStudentsBatch(CreateStudentsBatchRequest) returns (CreateStudentsBatchResponse);
     rpc DeleteStudentsBatch(DeleteStudentsBatchRequest) returns (google.protobuf.Empty);
 }
-
 
 message Branch {
     string id = 1;
@@ -52,6 +49,8 @@ message Student {
     string full_name = 7;
     string group_name = 8;
     string phone = 9;
+    string contract_number = 10;
+    bool status = 11; // Talaba holati: true - o'qimoqda, false - o'qimaydi
 }
 
 message ByIdRequest { string id = 1; }
@@ -76,17 +75,17 @@ message CreateStudentRequest {
     string full_name = 5;
     string group_name = 6;
     string phone = 7;
+    string contract_number = 8;
 }
 
 message ListStudentsResponse { repeated Student students = 1; }
-
 
 message CreateStudentsBatchRequest {
     repeated CreateStudentRequest students = 1;
 }
 
 message CreateStudentsBatchResponse {
-    repeated Student students = 1;
+    repeated Student students = 1; 
 }
 
 message DeleteStudentsBatchRequest {
@@ -117,20 +116,20 @@ message CheckPerformTransactionResponse {
 }
 
 message CreateTransactionRequest {
-    string id = 1;
-    int64 time = 2;
-    int64 amount = 3;
-    Account account = 4;
+    string id = 1;      // To'lov tizimidagi tranzaksiya IDsi
+    int64 time = 2;     // Yaratilgan vaqt (timestamp)
+    int64 amount = 3;   // Summa (tiyinda)
+    Account account = 4; // Talaba hisobi
 }
 
 message Receiver {
-    string id = 1;
-    int64 amount = 2;
+    string id = 1;     // Merchant ID
+    int64 amount = 2;  // Summa
 }
 
 message CreateTransactionResponse {
     int64 create_time = 1;
-    string transaction = 2;
+    string transaction = 2; // Tizimdagi ichki tranzaksiya IDsi
     int32 state = 3;
     repeated Receiver receivers = 4;
 }

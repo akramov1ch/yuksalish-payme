@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -30,7 +29,7 @@ type ManagementService interface {
 }
 
 type managementService struct {
-	db          *pgxpool.Pool 
+	db          *pgxpool.Pool
 	branchRepo  repository.BranchRepository
 	studentRepo repository.StudentRepository
 }
@@ -74,7 +73,8 @@ func (s *managementService) DeleteBranch(ctx context.Context, id string) error {
 func (s *managementService) CreateStudent(ctx context.Context, student *models.Student) (*models.Student, error) {
 	if student.AccountID == nil || *student.AccountID == "" {
 		for {
-			newID := fmt.Sprintf("YM%06d", rand.New(rand.NewSource(time.Now().UnixNano())).Intn(1000000))
+			// O'ZGARTIRILDI: ID generatsiya qilish mantiqi to'g'rilandi
+			newID := fmt.Sprintf("YM%05d", rand.Intn(100000))
 			existingStudent, err := s.studentRepo.GetByAccountID(ctx, newID)
 			if err != nil {
 				return nil, fmt.Errorf("mavjud account ID'ni tekshirishda xatolik: %w", err)
@@ -105,38 +105,63 @@ func (s *managementService) DeleteStudentByAccountId(ctx context.Context, accoun
 }
 
 func (s *managementService) CreateStudentsBatch(ctx context.Context, students []*models.Student) ([]*models.Student, error) {
+	if len(students) == 0 {
+		return []*models.Student{}, nil
+	}
+
+	accountIDs := make([]string, 0, len(students))
+	
 	for _, student := range students {
 		if student.AccountID == nil || *student.AccountID == "" {
 			for {
-				newID := fmt.Sprintf("YM%06d", rand.New(rand.NewSource(time.Now().UnixNano())).Intn(1000000))
-
+				// O'ZGARTIRILDI: ID generatsiya qilish mantiqi to'g'rilandi
+				newID := fmt.Sprintf("YM%05d", rand.Intn(100000))
+				
+				// TODO: Bu yerda bazadan va shu siklda generatsiya qilingan boshqa IDlar bilan to'qnashuvni tekshirish kerak.
+				// Hozircha, to'qnashuv ehtimoli kamligi uchun, faqat bazadan tekshiramiz.
 				existingStudent, err := s.studentRepo.GetByAccountID(ctx, newID)
 				if err != nil {
-					return nil, fmt.Errorf("mavjud account ID'ni tekshirishda xatolik: %w", err)
+					return nil, fmt.Errorf("ommaviy qo'shishda mavjud account ID'ni tekshirishda xatolik: %w", err)
 				}
-				if existingStudent == nil {
+
+				isDuplicateInBatch := false
+				for _, id := range accountIDs {
+					if id == newID {
+						isDuplicateInBatch = true
+						break
+					}
+				}
+
+				if existingStudent == nil && !isDuplicateInBatch {
 					student.AccountID = &newID
-					break 
+					break
 				}
 			}
 		}
+		accountIDs = append(accountIDs, *student.AccountID)
 	}
 
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("tranzaksiyani boshlashda xatolik: %w", err)
 	}
-	defer tx.Rollback(ctx) 
+	defer tx.Rollback(ctx)
+
 	_, err = s.studentRepo.CreateStudentsBatch(ctx, tx, students)
 	if err != nil {
-		return nil, err 
+		return nil, err
+	}
+
+	createdStudents, err := s.studentRepo.GetStudentsByAccountIDs(ctx, tx, accountIDs)
+	if err != nil {
+		return nil, fmt.Errorf("yangi qo'shilgan o'quvchilarni olishda xatolik: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("tranzaksiyani tasdiqlashda xatolik: %w", err)
 	}
 
-	return students, nil
+	return createdStudents, nil
 }
 
 func (s *managementService) DeleteStudentsBatch(ctx context.Context, accountIDs []string) error {

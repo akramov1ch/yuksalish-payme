@@ -14,7 +14,9 @@ type Student struct {
 	Balance         int64     `json:"balance" db:"balance"`
 	FullName        *string   `json:"full_name" db:"full_name"`
 	GroupName       *string   `json:"group_name" db:"group_name"`
-	Phone           *string   `json:"phone" db:"phone"` 
+	Phone           *string   `json:"phone" db:"phone"`
+	ContractNumber  *string   `json:"contract_number" db:"contract_number"`
+	Status          bool      `json:"status" db:"status"` // YANGI QO'SHILDI
 	CreatedAt       time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at" db:"updated_at"`
 }

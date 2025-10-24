@@ -107,7 +107,8 @@ def create_student(data):
             full_name=data['full_name'],
             group_name=data['group_name'],
             phone=data['phone'],
-            discount_percent=data['discount_percent']
+            discount_percent=data['discount_percent'],
+            contract_number=data.get('contract_number', "")  # O'ZGARTIRILDI
         )
         response = stub.CreateStudent(request)
         return response, None
@@ -130,6 +131,33 @@ def delete_student_by_account_id(account_id: str):
             return None, f"'{account_id}' hisob raqamli o'quvchi topilmadi."
         return None, f"gRPC xatoligi: {e.details()}"
 
+def get_student_by_account_id(account_id: str):
+    """O'quvchini hisob raqami bo'yicha oladi."""
+    stub = get_management_stub()
+    if not stub:
+        return None, "gRPC serveriga ulanib bo'lmadi."
+    try:
+        request = payment_pb2.ByAccountIdRequest(account_id=account_id)
+        response = stub.GetStudentByAccountId(request)
+        return response, None
+    except grpc.RpcError as e:
+        if e.code() == grpc.StatusCode.NOT_FOUND:
+            return None, f"'{account_id}' hisob raqamli o'quvchi topilmadi."
+        logger.error(f"O'quvchini olishda gRPC xatoligi: {e.details()}")
+        return None, f"gRPC xatoligi: {e.details()}"
+
+def update_student(student_data):
+    """O'quvchi ma'lumotlarini yangilaydi."""
+    stub = get_management_stub()
+    if not stub:
+        return None, "gRPC serveriga ulanib bo'lmadi."
+    try:
+        request = payment_pb2.Student(**student_data)
+        response = stub.UpdateStudent(request)
+        return response, None
+    except grpc.RpcError as e:
+        logger.error(f"O'quvchini yangilashda gRPC xatoligi: {e.details()}")
+        return None, f"gRPC xatoligi: {e.details()}"
 
 def create_students_batch(students_data: list):
     """O'quvchilar ro'yxatini ommaviy tarzda yaratadi."""
@@ -146,7 +174,8 @@ def create_students_batch(students_data: list):
                 full_name=student['full_name'],
                 group_name=student['group_name'],
                 phone=student['phone'],
-                discount_percent=student.get('discount_percent', 0.0)
+                discount_percent=student.get('discount_percent', 0.0),
+                contract_number=student.get('contract_number', "") # O'ZGARTIRILDI
             ))
         
         request = payment_pb2.CreateStudentsBatchRequest(students=grpc_students)

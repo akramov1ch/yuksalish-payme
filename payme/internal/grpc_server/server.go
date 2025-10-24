@@ -2,7 +2,7 @@ package grpc_server
 
 import (
 	"context"
-	"genproto/payment"
+	"payme/genproto/payment"
 	"payme/internal/models"
 	"payme/internal/service"
 	"payme/pkg/utils"
@@ -27,6 +27,7 @@ func NewGRPCServer(paymentService service.PaymentService, managementService serv
 	}
 }
 
+// ... (boshqa funksiyalar o'zgarishsiz)
 func convertRPCErrorToGRPC(err error) error {
 	if rpcErr, ok := err.(utils.RPCError); ok {
 		var code codes.Code
@@ -260,11 +261,18 @@ func (s *grpcServer) CreateStudent(ctx context.Context, req *payment.CreateStude
 		FullName:        &req.FullName,
 		GroupName:       &req.GroupName,
 		Phone:           &req.Phone,
+		ContractNumber:  &req.ContractNumber,
 	}
 	created, err := s.managementService.CreateStudent(ctx, studentModel)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "Internal server error: %v", err)
 	}
+	
+	contractNum := ""
+	if created.ContractNumber != nil {
+		contractNum = *created.ContractNumber
+	}
+	
 	return &payment.Student{
 		Id:              created.ID.String(),
 		AccountId:       *created.AccountID,
@@ -275,6 +283,7 @@ func (s *grpcServer) CreateStudent(ctx context.Context, req *payment.CreateStude
 		FullName:        *created.FullName,
 		GroupName:       *created.GroupName,
 		Phone:           *created.Phone,
+		ContractNumber:  contractNum,
 	}, nil
 }
 
@@ -286,6 +295,12 @@ func (s *grpcServer) GetStudentByAccountId(ctx context.Context, req *payment.ByA
 	if student == nil {
 		return nil, status.Errorf(codes.NotFound, "Student with account_id '%s' not found", req.AccountId)
 	}
+
+	contractNum := ""
+	if student.ContractNumber != nil {
+		contractNum = *student.ContractNumber
+	}
+
 	return &payment.Student{
 		Id:              student.ID.String(),
 		AccountId:       *student.AccountID,
@@ -296,6 +311,7 @@ func (s *grpcServer) GetStudentByAccountId(ctx context.Context, req *payment.ByA
 		FullName:        *student.FullName,
 		GroupName:       *student.GroupName,
 		Phone:           *student.Phone,
+		ContractNumber:  contractNum,
 	}, nil
 }
 
@@ -306,6 +322,10 @@ func (s *grpcServer) ListStudents(ctx context.Context, _ *payment.ListRequest) (
 	}
 	res := &payment.ListStudentsResponse{Students: make([]*payment.Student, 0, len(students))}
 	for _, st := range students {
+		contractNum := ""
+		if st.ContractNumber != nil {
+			contractNum = *st.ContractNumber
+		}
 		res.Students = append(res.Students, &payment.Student{
 			Id:              st.ID.String(),
 			AccountId:       *st.AccountID,
@@ -316,6 +336,7 @@ func (s *grpcServer) ListStudents(ctx context.Context, _ *payment.ListRequest) (
 			FullName:        *st.FullName,
 			GroupName:       *st.GroupName,
 			Phone:           *st.Phone,
+			ContractNumber:  contractNum,
 		})
 	}
 	return res, nil
@@ -337,11 +358,18 @@ func (s *grpcServer) UpdateStudent(ctx context.Context, req *payment.Student) (*
 		FullName:        &req.FullName,
 		GroupName:       &req.GroupName,
 		Phone:           &req.Phone,
+		ContractNumber:  &req.ContractNumber,
 	}
 	updated, err := s.managementService.UpdateStudent(ctx, studentModel)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "Internal server error: %v", err)
 	}
+
+	contractNum := ""
+	if updated.ContractNumber != nil {
+		contractNum = *updated.ContractNumber
+	}
+
 	return &payment.Student{
 		Id:              updated.ID.String(),
 		AccountId:       *updated.AccountID,
@@ -352,6 +380,7 @@ func (s *grpcServer) UpdateStudent(ctx context.Context, req *payment.Student) (*
 		FullName:        *updated.FullName,
 		GroupName:       *updated.GroupName,
 		Phone:           *updated.Phone,
+		ContractNumber:  contractNum,
 	}, nil
 }
 
@@ -377,6 +406,7 @@ func (s *grpcServer) CreateStudentsBatch(ctx context.Context, req *payment.Creat
 			FullName:        &grpcStudent.FullName,
 			GroupName:       &grpcStudent.GroupName,
 			Phone:           &grpcStudent.Phone,
+			ContractNumber:  &grpcStudent.ContractNumber,
 		}
 	}
 
@@ -387,6 +417,10 @@ func (s *grpcServer) CreateStudentsBatch(ctx context.Context, req *payment.Creat
 
 	grpcStudents := make([]*payment.Student, len(createdStudents))
 	for i, modelStudent := range createdStudents {
+		contractNum := ""
+		if modelStudent.ContractNumber != nil {
+			contractNum = *modelStudent.ContractNumber
+		}
 		grpcStudents[i] = &payment.Student{
 			AccountId:       *modelStudent.AccountID,
 			BranchId:        modelStudent.BranchID.String(),
@@ -395,6 +429,7 @@ func (s *grpcServer) CreateStudentsBatch(ctx context.Context, req *payment.Creat
 			FullName:        *modelStudent.FullName,
 			GroupName:       *modelStudent.GroupName,
 			Phone:           *modelStudent.Phone,
+			ContractNumber:  contractNum,
 		}
 	}
 

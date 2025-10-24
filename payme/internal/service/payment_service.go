@@ -2,9 +2,9 @@ package service
 
 import (
 	"context"
-	"genproto/bot_admin"
-	"genproto/payment"
 	"log"
+	"payme/genproto/bot_admin"
+	"payme/genproto/payment"
 	"payme/internal/models"
 	"payme/internal/repository"
 	"payme/pkg/utils"
@@ -144,6 +144,15 @@ func (s *paymentService) sendPaymentNotification(student *models.Student, branch
 		PaymentTime: paymentTimeStr,
 	}
 
+	if student.AccountID != nil {
+		req.AccountId = *student.AccountID
+	}
+	if student.ContractNumber != nil {
+		req.ContractNumber = *student.ContractNumber
+	}
+
+	log.Printf("[INFO] Botga yuborilayotgan xabarnoma ma'lumotlari: %+v", req)
+
 	_, err := s.botClient.NotifyPaymentSuccess(ctx, req)
 	if err != nil {
 		log.Printf("[XATOLIK] Telegram botga xabarnoma yuborishda xatolik: %v", err)
@@ -159,6 +168,11 @@ func (s *paymentService) CheckPerformTransaction(ctx context.Context, params Che
 
 	student, branch, err := s.studentRepo.GetStudentAndBranchByAccountID(ctx, params.Account.ID)
 	if err != nil || student == nil || branch == nil {
+		return nil, utils.ErrUserNotFound
+	}
+
+	if !student.Status {
+		log.Printf("Nofaol talaba (ID: %s) uchun to'lovga urinish bo'ldi.", params.Account.ID)
 		return nil, utils.ErrUserNotFound
 	}
 
@@ -189,6 +203,10 @@ func (s *paymentService) CreateTransaction(ctx context.Context, params CreateTra
 
 	student, branch, err := s.studentRepo.GetStudentAndBranchByAccountID(ctx, params.Account.ID)
 	if err != nil || student == nil || branch == nil || branch.MerchantID == nil {
+		return nil, utils.ErrUserNotFound
+	}
+
+	if !student.Status {
 		return nil, utils.ErrUserNotFound
 	}
 
@@ -260,6 +278,10 @@ func (s *paymentService) PerformTransaction(ctx context.Context, params Transact
 
 	student, branch, err := s.studentRepo.GetStudentAndBranchByStudentID(ctx, transaction.StudentID)
 	if err != nil || student == nil || branch == nil {
+		return nil, utils.ErrCouldNotPerform
+	}
+
+	if !student.Status {
 		return nil, utils.ErrCouldNotPerform
 	}
 

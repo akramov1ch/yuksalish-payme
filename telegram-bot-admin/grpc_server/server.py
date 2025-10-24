@@ -13,11 +13,15 @@ class BotAdminService(bot_admin_pb2_grpc.BotAdminServiceServicer):
         self.bot = bot_instance
 
     def NotifyPaymentSuccess(self, request, context):
+        # Diagnostika uchun kelgan ma'lumotni to'liq logga chiqarish
         logger.info(f"To'lov haqida gRPC xabarnomasi keldi: {request}")
         
+        # Xabar matnini yangi maydonlar bilan formatlash
         message = (
             f"💸 *Yangi To'lov!*\n\n"
             f"👤 *O'quvchi:* {request.student_name}\n"
+            f"🆔 *ID:* `{request.account_id}`\n"
+            f"📄 *Shartnoma №:* `{request.contract_number}`\n"
             f"🏢 *Filial:* {request.branch_name}\n"
             f"👨‍🏫 *Guruh:* {request.group_name}\n"
             f"💰 *Summa:* {request.amount:,} so'm\n"

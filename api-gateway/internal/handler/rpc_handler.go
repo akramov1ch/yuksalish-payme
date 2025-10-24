@@ -5,7 +5,7 @@ import (
 	"api-gateway/internal/grpc_client"
 	"encoding/base64"
 	"encoding/json"
-	"genproto/payment"
+	"api-gateway/genproto/payment"
 	"io"
 	"log"
 	"net/http"
