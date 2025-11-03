@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package bot_admin;
+
+option go_package = "genproto/bot_admin";
+
+import "google/protobuf/empty.proto";
+
+service BotAdminService {
+    rpc NotifyPaymentSuccess(NotifyPaymentSuccessRequest) returns (google.protobuf.Empty);
+}
+
+message NotifyPaymentSuccessRequest {
+    string student_name = 1;
+    string branch_name = 2;
+    string group_name = 3;
+    int64 amount = 4;
+    string payment_time = 5;
+    string account_id = 6;      
+    string contract_number = 7; 
+}

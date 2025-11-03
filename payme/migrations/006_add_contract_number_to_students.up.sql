@@ -1,0 +1,1 @@
+ALTER TABLE students ADD COLUMN contract_number VARCHAR(255);
