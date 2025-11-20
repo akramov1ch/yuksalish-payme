@@ -21,7 +21,7 @@ type StudentRepository interface {
 	DeleteByAccountID(ctx context.Context, accountID string) error
 	CreateStudentsBatch(ctx context.Context, tx pgx.Tx, students []*models.Student) (int64, error)
 	DeleteStudentsByAccountIDs(ctx context.Context, tx pgx.Tx, accountIDs []string) (int64, error)
-	GetStudentsByAccountIDs(ctx context.Context, accountIDs []string) ([]*models.Student, error) // O'ZGARTIRILDI
+	GetStudentsByAccountIDs(ctx context.Context, accountIDs []string) ([]*models.Student, error)
 	UpdateStudentsBatch(ctx context.Context, tx pgx.Tx, students []*models.Student) error
 }
 
@@ -33,20 +33,33 @@ func NewStudentRepository(db *pgxpool.Pool) StudentRepository {
 	return &pgStudentRepository{db: db}
 }
 
+// UpdateStudentsBatch - Ommaviy yangilash (AccountID ni ham yangilaydi)
 func (r *pgStudentRepository) UpdateStudentsBatch(ctx context.Context, tx pgx.Tx, students []*models.Student) error {
 	if len(students) == 0 {
 		return nil
 	}
 
 	batch := &pgx.Batch{}
+	// E'TIBOR BERING: account_id ham SET qismiga qo'shildi ($9)
 	query := `UPDATE students SET 
 				branch_id = $1, parent_name = $2, discount_percent = $3, 
 				full_name = $4, group_name = $5, phone = $6, 
-				contract_number = $7, status = $8, updated_at = NOW()
-			  WHERE id = $9`
+				contract_number = $7, status = $8, account_id = $9, updated_at = NOW()
+			  WHERE id = $10`
 
 	for _, s := range students {
-		batch.Queue(query, s.BranchID, s.ParentName, s.DiscountPercent, s.FullName, s.GroupName, s.Phone, s.ContractNumber, s.Status, s.ID)
+		batch.Queue(query, 
+			s.BranchID,        // $1
+			s.ParentName,      // $2
+			s.DiscountPercent, // $3
+			s.FullName,        // $4
+			s.GroupName,       // $5
+			s.Phone,           // $6
+			s.ContractNumber,  // $7
+			s.Status,          // $8
+			s.AccountID,       // $9 (YANGI QO'SHILDI)
+			s.ID,              // $10
+		)
 	}
 
 	br := tx.SendBatch(ctx, batch)
@@ -62,7 +75,6 @@ func (r *pgStudentRepository) UpdateStudentsBatch(ctx context.Context, tx pgx.Tx
 	return nil
 }
 
-// GetStudentsByAccountIDs funksiyasi endi tranzaksiya (tx) talab qilmaydi
 func (r *pgStudentRepository) GetStudentsByAccountIDs(ctx context.Context, accountIDs []string) ([]*models.Student, error) {
 	query := `SELECT id, account_id, branch_id, parent_name, discount_percent, balance, full_name, group_name, phone, contract_number, status, created_at, updated_at 
 			  FROM students 
@@ -88,7 +100,6 @@ func (r *pgStudentRepository) GetStudentsByAccountIDs(ctx context.Context, accou
 	}
 	return students, nil
 }
-
 
 func (r *pgStudentRepository) CreateStudentsBatch(ctx context.Context, tx pgx.Tx, students []*models.Student) (int64, error) {
 	if len(students) == 0 {
@@ -126,14 +137,11 @@ func (r *pgStudentRepository) DeleteStudentsByAccountIDs(ctx context.Context, tx
 	if len(accountIDs) == 0 {
 		return 0, nil
 	}
-
 	query := `DELETE FROM students WHERE account_id = ANY($1)`
-
 	cmdTag, err := tx.Exec(ctx, query, accountIDs)
 	if err != nil {
 		return 0, fmt.Errorf("ommaviy o'quvchi o'chirishda xatolik: %w", err)
 	}
-
 	return cmdTag.RowsAffected(), nil
 }
 
@@ -171,7 +179,6 @@ func (r *pgStudentRepository) GetAll(ctx context.Context) ([]models.Student, err
 		return nil, fmt.Errorf("error getting all students: %w", err)
 	}
 	defer rows.Close()
-
 	var students []models.Student
 	for rows.Next() {
 		var s models.Student

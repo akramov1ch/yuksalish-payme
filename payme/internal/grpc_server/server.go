@@ -398,7 +398,16 @@ func (s *grpcServer) CreateStudentsBatch(ctx context.Context, req *payment.Creat
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "Invalid Branch UUID format for student %s: %v", grpcStudent.FullName, err)
 		}
+		
+		// AccountID ni gRPC so'rovidan olib, modelga o'tkazish
+		var accID *string
+		if grpcStudent.AccountId != "" {
+			val := grpcStudent.AccountId
+			accID = &val
+		}
+
 		studentsToCreate[i] = &models.Student{
+			AccountID:       accID,
 			BranchID:        branchUUID,
 			ParentName:      grpcStudent.ParentName,
 			DiscountPercent: grpcStudent.DiscountPercent,
@@ -421,7 +430,7 @@ func (s *grpcServer) CreateStudentsBatch(ctx context.Context, req *payment.Creat
 			contractNum = *modelStudent.ContractNumber
 		}
 		grpcStudents[i] = &payment.Student{
-			Id:              modelStudent.ID.String(), // UUID ni string qilib qo'shish
+			Id:              modelStudent.ID.String(),
 			AccountId:       *modelStudent.AccountID,
 			BranchId:        modelStudent.BranchID.String(),
 			ParentName:      modelStudent.ParentName,
@@ -447,8 +456,18 @@ func (s *grpcServer) UpdateStudentsBatch(ctx context.Context, req *payment.Updat
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "Invalid Branch UUID format: %v", err)
 		}
+
+		// --- AccountID ni olish ---
+		var accID *string
+		if grpcStudent.AccountId != "" {
+			val := grpcStudent.AccountId
+			accID = &val
+		}
+		// --------------------------
+
 		studentsToUpdate[i] = &models.Student{
 			ID:              studentUUID,
+			AccountID:       accID, // <--- MANA SHU YERDA QO'SHILDI
 			BranchID:        branchUUID,
 			ParentName:      grpcStudent.ParentName,
 			DiscountPercent: grpcStudent.DiscountPercent,

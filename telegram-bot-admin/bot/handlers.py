@@ -11,13 +11,13 @@ import gspread
 from google.oauth2.service_account import Credentials
 from . import states
 
+# Loglarni terminalga chiqarish
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 super_admin_id = settings.super_admin_id
 
 # --- Yordamchi Funksiyalar ---
-
 def get_gsheet_client():
-    """Google Sheets'ga ulanish uchun yordamchi funksiya."""
     try:
         scopes = ["https://www.googleapis.com/auth/spreadsheets"]
         creds = Credentials.from_service_account_file(settings.google_creds_file, scopes=scopes)
@@ -36,23 +36,17 @@ def create_dynamic_keyboard(items):
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
 def normalize_text(s):
-    """Matnni kichik harflarga o'tkazib, ortiqcha bo'shliqlardan tozalaydi."""
-    return (s or "").strip().lower()
+    return (s or "").strip().lower().replace(" ", "")
 
-def are_students_equal(s_sheet, s_db):
-    """Ikki o'quvchi ob'ektini taqqoslaydi (faqat sinxronizatsiya uchun muhim maydonlar)."""
-    if normalize_text(s_sheet['full_name']) != normalize_text(s_db.full_name): return False
-    if normalize_text(s_sheet['parent_name']) != normalize_text(s_db.parent_name): return False
-    if normalize_text(s_sheet['phone']) != normalize_text(s_db.phone): return False
-    if normalize_text(s_sheet['group_name']) != normalize_text(s_db.group_name): return False
-    if s_sheet['branch_id'] != s_db.branch_id: return False
-    if float(s_sheet['discount_percent']) != float(s_db.discount_percent): return False
-    if (s_sheet['status_str'] == 'amalda') != s_db.status: return False
-    if normalize_text(s_sheet['contract_number']) != normalize_text(s_db.contract_number or ""): return False
-    return True
+def safe_get(row, index):
+    """Ro'yxatdan indeks bo'yicha xavfsiz olish"""
+    try:
+        val = row[index]
+        return str(val).strip() if val else ""
+    except IndexError:
+        return ""
 
 # --- Dekoratorlar ---
-
 def admin_required(func):
     @wraps(func)
     def wrapped(update: Update, context: CallbackContext, *args, **kwargs):
@@ -74,7 +68,6 @@ def super_admin_required(func):
     return wrapped
 
 # --- Asosiy Handler'lar ---
-
 @admin_required
 def start(update: Update, context: CallbackContext):
     keyboard = [
@@ -89,170 +82,169 @@ def start(update: Update, context: CallbackContext):
     update.message.reply_text("Boshqaruv paneliga xush kelibsiz!", reply_markup=reply_markup)
 
 def cancel(update: Update, context: CallbackContext):
-    update.message.reply_text("Amal bekor qilindi. Bosh menyuga qaytilmoqda...", reply_markup=ReplyKeyboardRemove())
+    update.message.reply_text("Amal bekor qilindi.", reply_markup=ReplyKeyboardRemove())
     context.user_data.clear()
     start(update, context)
     return ConversationHandler.END
 
 # ====================================================================
-# SINXRONIZATSIYA FUNKSIYASINING YANGI VERSIYASI
+# SINXRONIZATSIYA (DEBUG VERSIYA)
 # ====================================================================
 @admin_required
 def sync_with_google_sheet(update: Update, context: CallbackContext):
-    progress_message = update.message.reply_text(
-        "⏳ Google Sheets bilan sinxronizatsiya boshlanmoqda...",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    progress_message = update.message.reply_text("⏳ Sinxronizatsiya boshlanmoqda... (Loglarni terminalda kuzating)", reply_markup=ReplyKeyboardRemove())
 
-    def edit_progress_message(new_text):
-        if progress_message.text != new_text:
-            try:
-                progress_message.edit_text(new_text)
-            except Exception as e:
-                logger.warning(f"Progress xabarini yangilab bo'lmadi: {e}")
+    def edit_progress(text):
+        try:
+            if progress_message.text != text: progress_message.edit_text(text)
+        except: pass
 
-    gspread_client, gsheet_error = get_gsheet_client()
-    if gsheet_error:
-        edit_progress_message(f"❌ Google Sheets'ga ulanib bo'lmadi: {gsheet_error}")
+    gspread_client, err = get_gsheet_client()
+    if err:
+        edit_progress(f"❌ Google Sheets xatosi: {err}")
         start(update, context)
         return
-
-    total_added = 0
-    total_updated = 0
-    error_sheets = []
 
     try:
-        edit_progress_message("⏳ Ma'lumotlar bazasidan filiallar va o'quvchilar ro'yxati olinmoqda...")
-        all_branches, branch_err = grpc_client.list_branches()
-        all_students, student_err = grpc_client.list_students()
-        if branch_err or student_err:
-            raise Exception(f"Baza bilan ishlashda xatolik: {branch_err or student_err}")
+        edit_progress("⏳ Bazadan ma'lumotlar olinmoqda...")
+        all_branches, _ = grpc_client.list_branches()
+        all_students, _ = grpc_client.list_students()
+        
+        if not all_branches:
+            edit_progress("❌ DIQQAT: Bazada hech qanday filial yo'q! Avval bot orqali '➕ Filial qo'shish' tugmasi bilan filial yarating.")
+            return
 
-        branch_map_by_name = {normalize_text(b.name): b.id for b in all_branches}
-        existing_students_by_uuid = {s.id: s for s in all_students}
-        logger.info(f"Bazadan {len(all_branches)} ta filial va {len(all_students)} ta o'quvchi olindi.")
+        # Filial nomini ID ga o'girish uchun lug'at
+        branch_map = {normalize_text(b.name): b.id for b in all_branches}
+        db_students_by_uuid = {s.id: s for s in all_students}
 
-        edit_progress_message(f"⏳ Google Sheets fayli ({settings.google_spreadsheet_id}) ochilmoqda...")
         spreadsheet = gspread_client.open_by_key(settings.google_spreadsheet_id)
-
     except Exception as e:
-        edit_progress_message(f"❌ Boshlang'ich ma'lumotlarni olishda kutilmagan xatolik: {e}")
+        edit_progress(f"❌ Xatolik: {e}")
+        logger.error(f"Boshlang'ich xatolik: {e}")
         start(update, context)
         return
 
-    # Har bir varaq (worksheet) uchun sinxronizatsiyani bajarish
+    total_created = 0
+    total_updated = 0
+
     for sheet_name in settings.google_worksheet_name_list:
         try:
-            edit_progress_message(f"⏳ '{sheet_name}' varag'i bilan ishlanmoqda...")
-            worksheet = spreadsheet.worksheet(sheet_name)
-
-            all_data = worksheet.get_all_values()
-            rows_to_process = all_data[START_ROW-1:]
-            total_rows_in_sheet = len(rows_to_process)
+            edit_progress(f"⏳ '{sheet_name}' varag'i o'qilmoqda...")
+            logger.info(f"--- VARAQ: {sheet_name} ---")
             
-            students_to_add = []
-            students_to_update = []
-            updates_for_gsheet = []
-            UPDATE_INTERVAL = 20
+            try:
+                worksheet = spreadsheet.worksheet(sheet_name)
+            except gspread.exceptions.WorksheetNotFound:
+                logger.error(f"Varaq topilmadi: {sheet_name}")
+                continue
 
-            for i, row_values in enumerate(rows_to_process):
-                row_number = i + START_ROW
-                logger.info(f"[{sheet_name}] Qator {row_number} tekshirilmoqda: {row_values}")
+            rows = worksheet.get_all_values()[START_ROW-1:]
+            
+            to_create = [] 
+            to_update = [] 
+            updates_for_sheet = [] 
+
+            for i, row in enumerate(rows):
+                row_num = i + START_ROW
                 
-                if (i + 1) % UPDATE_INTERVAL == 0 or (i + 1) == total_rows_in_sheet:
-                    edit_progress_message(
-                        f"⏳ '{sheet_name}' varag'i bilan ishlanmoqda...\n\n"
-                        f"✅ {i + 1}/{total_rows_in_sheet} qator tekshirildi."
-                    )
-
-                # <<< O'ZGARTIRILGAN QISM BOSHI >>>
-                student_name_col = SHEET_COLUMNS_CONFIG["student_name"]
-                if len(row_values) <= student_name_col or not str(row_values[student_name_col]).strip():
-                    logger.info(f"  -> O'TKAZIB YUBORILDI: Qator bo'sh yoki F.I.Sh. ustuni ({student_name_col+1}) kiritilmagan.")
-                    continue
-                # <<< O'ZGARTIRILGAN QISM TUGADI >>>
-
-                branch_name = str(row_values[SHEET_COLUMNS_CONFIG["branch_name"]] or '').strip()
-                branch_id = branch_map_by_name.get(normalize_text(branch_name))
-                if not branch_id:
-                    logger.warning(f"  -> O'TKAZIB YUBORILDI: '{branch_name}' nomli filial bazada topilmadi.")
+                # Ism bo'sh bo'lsa o'tkazib yuboramiz
+                student_name_raw = safe_get(row, SHEET_COLUMNS_CONFIG["student_name"])
+                if not student_name_raw:
                     continue
 
-                student_data_from_sheet = {
-                    'branch_id': branch_id, 'contract_number': str(row_values[SHEET_COLUMNS_CONFIG["contract_number"]] or '').strip(),
-                    'full_name': str(row_values[SHEET_COLUMNS_CONFIG["student_name"]]).strip(), 'group_name': f"{str(row_values[SHEET_COLUMNS_CONFIG['class']] or '').strip()}-sinf",
-                    'parent_name': str(row_values[SHEET_COLUMNS_CONFIG["parent_name"]] or '').strip(), 'phone': str(row_values[SHEET_COLUMNS_CONFIG["phone"]] or '').strip(),
-                    'discount_percent': float(str(row_values[SHEET_COLUMNS_CONFIG["discount"]]).replace('%', '').strip() or 0),
-                    'status_str': str(row_values[SHEET_COLUMNS_CONFIG["status"]] or '').strip().lower(),
+                # Filialni aniqlash
+                b_name_raw = safe_get(row, SHEET_COLUMNS_CONFIG["branch_name"])
+                b_name_norm = normalize_text(b_name_raw)
+                b_id = branch_map.get(b_name_norm)
+                
+                if not b_id: 
+                    # logger.warning(f"Qator {row_num}: Filial topilmadi! '{b_name_raw}'")
+                    continue 
+
+                # Ma'lumotlarni yig'ish
+                acc_id = safe_get(row, SHEET_COLUMNS_CONFIG["account_id"]).upper().replace(" ", "")
+                uuid_val = safe_get(row, SHEET_COLUMNS_CONFIG["uuid"])
+                
+                # DEBUG LOG: Har bir o'quvchi uchun nima o'qiyotganini ko'ramiz
+                logger.info(f"Qator {row_num}: {student_name_raw} | ID: '{acc_id}' | UUID: '{uuid_val}'")
+
+                # Chegirma
+                try:
+                    discount_str = safe_get(row, SHEET_COLUMNS_CONFIG["discount"]).replace('%', '')
+                    discount_val = float(discount_str) if discount_str else 0.0
+                except:
+                    discount_val = 0.0
+
+                student_data = {
+                    'branch_id': b_id,
+                    'account_id': acc_id,
+                    'full_name': student_name_raw,
+                    'parent_name': safe_get(row, SHEET_COLUMNS_CONFIG["parent_name"]),
+                    'phone': safe_get(row, SHEET_COLUMNS_CONFIG["phone"]),
+                    'group_name': f"{safe_get(row, SHEET_COLUMNS_CONFIG['class'])}-sinf",
+                    'contract_number': safe_get(row, SHEET_COLUMNS_CONFIG["contract_number"]),
+                    'discount_percent': discount_val,
+                    'status': (safe_get(row, SHEET_COLUMNS_CONFIG["status"]).lower() == 'amalda')
                 }
-                
-                uuid_val = ""
-                if len(row_values) > SHEET_COLUMNS_CONFIG["uuid"]:
-                    uuid_val = str(row_values[SHEET_COLUMNS_CONFIG["uuid"]]).strip()
 
-                if uuid_val and uuid_val in existing_students_by_uuid:
-                    student_from_db = existing_students_by_uuid[uuid_val]
-                    if not are_students_equal(student_data_from_sheet, student_from_db):
-                        logger.info(f"  -> YANGILANADI: '{student_from_db.full_name}' uchun o'zgarish topildi.")
-                        students_to_update.append({
-                            'id': student_from_db.id, 'account_id': student_from_db.account_id, 'balance': student_from_db.balance,
-                            'status': (student_data_from_sheet['status_str'] == 'amalda'), **student_data_from_sheet
-                        })
-                    else:
-                        logger.info(f"  -> O'zgarish yo'q: '{student_from_db.full_name}'.")
+                if uuid_val and uuid_val in db_students_by_uuid:
+                    student_data['id'] = uuid_val
+                    to_update.append(student_data)
                 else:
-                    logger.info(f"  -> QO'SHILADI: Yangi o'quvchi '{student_data_from_sheet['full_name']}' topildi.")
-                    students_to_add.append({'row_number': row_number, **student_data_from_sheet})
-            
-            if students_to_add:
-                edit_progress_message(f"⏳ '{sheet_name}' varag'idan {len(students_to_add)} ta yangi o'quvchi bazaga qo'shilmoqda...")
-                grpc_students_to_add = [ {k: v for k, v in s.items() if k != 'row_number'} for s in students_to_add]
-                created_students, err = grpc_client.create_students_batch(grpc_students_to_add)
-                if err: raise Exception(f"Ommaviy qo'shishda xatolik: {err}")
-                
-                total_added += len(created_students)
-                created_map = { (s.branch_id, normalize_text(s.full_name), normalize_text(s.parent_name)): s for s in created_students }
-                
-                for s_to_add in students_to_add:
-                    key = (s_to_add['branch_id'], normalize_text(s_to_add['full_name']), normalize_text(s_to_add['parent_name']))
-                    created = created_map.get(key)
-                    if created:
-                        updates_for_gsheet.append(gspread.Cell(s_to_add['row_number'], SHEET_COLUMNS_CONFIG["account_id"] + 1, created.account_id))
-                        updates_for_gsheet.append(gspread.Cell(s_to_add['row_number'], SHEET_COLUMNS_CONFIG["uuid"] + 1, created.id))
+                    student_data['row_number'] = row_num
+                    to_create.append(student_data)
 
-            if students_to_update:
-                edit_progress_message(f"⏳ '{sheet_name}' varag'idan {len(students_to_update)} ta o'quvchi ma'lumotlari yangilanmoqda...")
-                success, err = grpc_client.update_students_batch(students_to_update)
-                if not success: raise Exception(f"Ommaviy yangilashda xatolik: {err}")
-                total_updated += len(students_to_update)
+            # --- BAZAGA YUBORISH ---
+            if to_update:
+                logger.info(f"Yangilanmoqda: {len(to_update)} ta")
+                grpc_client.update_students_batch(to_update)
+                total_updated += len(to_update)
 
-            if updates_for_gsheet:
-                edit_progress_message(f"⏳ '{sheet_name}' varag'iga yangi ID'lar yozilmoqda...")
-                worksheet.update_cells(updates_for_gsheet, value_input_option='USER_ENTERED')
-                logger.info(f"'{worksheet.title}' varog'iga {len(updates_for_gsheet)//2} ta o'quvchi ID'si yozildi.")
+            if to_create:
+                logger.info(f"Yaratilmoqda/Tekshirilmoqda: {len(to_create)} ta")
+                clean_create_list = [{k: v for k, v in s.items() if k != 'row_number'} for s in to_create]
+                
+                created_students, err = grpc_client.create_students_batch(clean_create_list)
+                if err:
+                    logger.error(f"Create batch error: {err}")
+                else:
+                    total_created += len(created_students)
+                    created_map = {s.account_id: s for s in created_students}
+
+                    for item in to_create:
+                        # Biz yuborgan Account ID bo'yicha natijani qidiramiz
+                        res = created_map.get(item['account_id'])
+                        
+                        # Agar Account ID bo'sh ketgan bo'lsa va Go yangisini yaratgan bo'lsa
+                        if not res:
+                             for s in created_students:
+                                 if s.branch_id == item['branch_id'] and normalize_text(s.full_name) == normalize_text(item['full_name']):
+                                     res = s
+                                     break
+                        
+                        if res:
+                            # UUID ni yozamiz
+                            updates_for_sheet.append(gspread.Cell(item['row_number'], SHEET_COLUMNS_CONFIG["uuid"] + 1, res.id))
+                            
+                            # Agar Sheetda ID bo'sh bo'lgan bo'lsa, yangi ID ni ham yozamiz
+                            if not item['account_id']:
+                                 updates_for_sheet.append(gspread.Cell(item['row_number'], SHEET_COLUMNS_CONFIG["account_id"] + 1, res.account_id))
+
+            if updates_for_sheet:
+                logger.info(f"Sheet yangilanmoqda: {len(updates_for_sheet)} ta katak")
+                worksheet.update_cells(updates_for_sheet, value_input_option='USER_ENTERED')
 
         except Exception as e:
-            logger.error(f"'{sheet_name}' varag'i bilan ishlashda xatolik: {e}", exc_info=True)
-            error_sheets.append(sheet_name)
+            logger.error(f"Sheet loop error: {e}", exc_info=True)
+            edit_progress(f"⚠️ Xatolik varaqda: {e}")
 
-    final_message = (
-        f"✅ Sinxronizatsiya yakunlandi!\n\n"
-        f"📄 Jami varaqlar: {len(settings.google_worksheet_name_list)}\n"
-        f"✔️ Muvaffaqiyatli: {len(settings.google_worksheet_name_list) - len(error_sheets)}\n"
-        f"❌ Xatolik yuz berganlar: {len(error_sheets)}\n\n"
-        f"📊 Umumiy natija:\n"
-        f"➕ Yangi qo'shilgan o'quvchilar: {total_added}\n"
-        f"🔄 Ma'lumotlari yangilanganlar: {total_updated}\n"
-    )
-    if error_sheets:
-        final_message += f"\n❗️ Xatolik yuz bergan varaqlar: {', '.join(error_sheets)}"
-
-    edit_progress_message(final_message)
+    final_msg = f"✅ Tugadi!\nYangilandi: {total_updated}\nQo'shildi: {total_created}"
+    logger.info(final_msg)
+    edit_progress(final_msg)
     start(update, context)
 
-
-# --- QOLGAN BARCHA HANDLER'LAR O'ZGARISHSIZ QOLADI ---
-
+# --- QOLGAN HANDLERLAR O'ZGARISHSIZ ---
 @admin_required
 def list_branches(update: Update, context: CallbackContext):
     branches_info, error = grpc_client.list_branches_with_student_counts()

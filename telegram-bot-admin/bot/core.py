@@ -4,7 +4,15 @@ from . import handlers
 from . import states
 
 def run_bot():
-    updater = Updater(settings.telegram_bot_token, use_context=True)
+    # O'ZGARTIRISH: Timeoutlarni oshiramiz (20 soniya)
+    req_kwargs = {
+        'read_timeout': 20,
+        'connect_timeout': 20
+    }
+    
+    # request_kwargs ni qo'shamiz
+    updater = Updater(settings.telegram_bot_token, use_context=True, request_kwargs=req_kwargs)
+    
     dispatcher = updater.dispatcher
 
     common_fallbacks = [

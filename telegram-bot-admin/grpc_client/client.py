@@ -1,3 +1,5 @@
+# telegram-bot-admin/grpc_client/client.py
+
 import grpc
 from generated import payment_pb2, payment_pb2_grpc
 from google.protobuf import empty_pb2
@@ -159,6 +161,7 @@ def create_students_batch(students_data: list):
     try:
         grpc_students = [
             payment_pb2.CreateStudentRequest(
+                account_id=s.get('account_id', ""), # <--- MUHIM: Account ID ni gRPC ga uzatish
                 branch_id=s['branch_id'],
                 parent_name=s['parent_name'],
                 full_name=s['full_name'],
@@ -180,7 +183,6 @@ def create_students_batch(students_data: list):
         logger.error(f"O'quvchilarni ommaviy yaratishda kutilmagan xatolik: {e}", exc_info=True)
         return None, str(e)
 
-# YANGI FUNKSIYA
 def update_students_batch(students_data: list):
     stub = get_management_stub()
     if not stub:
