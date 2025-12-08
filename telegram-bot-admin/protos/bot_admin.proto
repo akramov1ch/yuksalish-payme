@@ -18,4 +18,5 @@ message NotifyPaymentSuccessRequest {
     string payment_time = 5;
     string account_id = 6;      
     string contract_number = 7; 
+    int64 topic_id = 8; // YANGI: Xabar yuboriladigan Topic ID
 }

@@ -163,6 +163,7 @@ func (s *grpcServer) CreateBranch(ctx context.Context, req *payment.CreateBranch
 		MfoCode:       req.MfoCode,
 		AccountNumber: req.AccountNumber,
 		MerchantID:    &req.MerchantId,
+		TopicID:       req.TopicId, // YANGI
 	}
 	created, err := s.managementService.CreateBranch(ctx, branchModel)
 	if err != nil {
@@ -175,6 +176,7 @@ func (s *grpcServer) CreateBranch(ctx context.Context, req *payment.CreateBranch
 		MfoCode:       created.MfoCode,
 		AccountNumber: created.AccountNumber,
 		MerchantId:    *created.MerchantID,
+		TopicId:       created.TopicID, // YANGI
 	}, nil
 }
 
@@ -190,6 +192,7 @@ func (s *grpcServer) GetBranch(ctx context.Context, req *payment.ByIdRequest) (*
 		MfoCode:       branch.MfoCode,
 		AccountNumber: branch.AccountNumber,
 		MerchantId:    *branch.MerchantID,
+		TopicId:       branch.TopicID, // YANGI
 	}, nil
 }
 
@@ -207,6 +210,7 @@ func (s *grpcServer) ListBranches(ctx context.Context, _ *emptypb.Empty) (*payme
 			MfoCode:       b.MfoCode,
 			AccountNumber: b.AccountNumber,
 			MerchantId:    *b.MerchantID,
+			TopicId:       b.TopicID, // YANGI
 		})
 	}
 	return res, nil
@@ -224,6 +228,7 @@ func (s *grpcServer) UpdateBranch(ctx context.Context, req *payment.Branch) (*pa
 		MfoCode:       req.MfoCode,
 		AccountNumber: req.AccountNumber,
 		MerchantID:    &req.MerchantId,
+		TopicID:       req.TopicId, // YANGI
 	}
 	updated, err := s.managementService.UpdateBranch(ctx, branchModel)
 	if err != nil {
@@ -236,6 +241,7 @@ func (s *grpcServer) UpdateBranch(ctx context.Context, req *payment.Branch) (*pa
 		MfoCode:       updated.MfoCode,
 		AccountNumber: updated.AccountNumber,
 		MerchantId:    *updated.MerchantID,
+		TopicId:       updated.TopicID, // YANGI
 	}, nil
 }
 
@@ -399,7 +405,6 @@ func (s *grpcServer) CreateStudentsBatch(ctx context.Context, req *payment.Creat
 			return nil, status.Errorf(codes.InvalidArgument, "Invalid Branch UUID format for student %s: %v", grpcStudent.FullName, err)
 		}
 		
-		// AccountID ni gRPC so'rovidan olib, modelga o'tkazish
 		var accID *string
 		if grpcStudent.AccountId != "" {
 			val := grpcStudent.AccountId
@@ -457,17 +462,15 @@ func (s *grpcServer) UpdateStudentsBatch(ctx context.Context, req *payment.Updat
 			return nil, status.Errorf(codes.InvalidArgument, "Invalid Branch UUID format: %v", err)
 		}
 
-		// --- AccountID ni olish ---
 		var accID *string
 		if grpcStudent.AccountId != "" {
 			val := grpcStudent.AccountId
 			accID = &val
 		}
-		// --------------------------
 
 		studentsToUpdate[i] = &models.Student{
 			ID:              studentUUID,
-			AccountID:       accID, // <--- MANA SHU YERDA QO'SHILDI
+			AccountID:       accID,
 			BranchID:        branchUUID,
 			ParentName:      grpcStudent.ParentName,
 			DiscountPercent: grpcStudent.DiscountPercent,

@@ -51,12 +51,14 @@ def create_branch(data):
     if not stub:
         return None, "gRPC serveriga ulanib bo'lmadi."
     try:
+        # YANGI: topic_id ni qo'shish
         request = payment_pb2.CreateBranchRequest(
             name=data['name'],
             monthly_fee=int(data['monthly_fee']),
             mfo_code=data['mfo_code'],
             account_number=data['account_number'],
-            merchant_id=data['merchant_id']
+            merchant_id=data['merchant_id'],
+            topic_id=int(data.get('topic_id', 0)) 
         )
         response = stub.CreateBranch(request)
         return response, None
@@ -161,7 +163,7 @@ def create_students_batch(students_data: list):
     try:
         grpc_students = [
             payment_pb2.CreateStudentRequest(
-                account_id=s.get('account_id', ""), # <--- MUHIM: Account ID ni gRPC ga uzatish
+                account_id=s.get('account_id', ""),
                 branch_id=s['branch_id'],
                 parent_name=s['parent_name'],
                 full_name=s['full_name'],

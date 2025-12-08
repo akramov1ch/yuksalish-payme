@@ -27,7 +27,7 @@ service ManagementService {
     rpc UpdateStudent(Student) returns (Student);
     rpc DeleteStudentByAccountId(ByAccountIdRequest) returns (google.protobuf.Empty);
     rpc CreateStudentsBatch(CreateStudentsBatchRequest) returns (CreateStudentsBatchResponse);
-    rpc UpdateStudentsBatch(UpdateStudentsBatchRequest) returns (google.protobuf.Empty); // YANGI QO'SHILDI
+    rpc UpdateStudentsBatch(UpdateStudentsBatchRequest) returns (google.protobuf.Empty);
     rpc DeleteStudentsBatch(DeleteStudentsBatchRequest) returns (google.protobuf.Empty);
 }
 
@@ -38,6 +38,7 @@ message Branch {
     string mfo_code = 4;
     string account_number = 5;
     string merchant_id = 6;
+    int64 topic_id = 7; // YANGI: Telegram Topic ID
 }
 
 message Student {
@@ -64,6 +65,7 @@ message CreateBranchRequest {
     string mfo_code = 3;
     string account_number = 4;
     string merchant_id = 5;
+    int64 topic_id = 6; // YANGI: Telegram Topic ID
 }
 
 message ListBranchesResponse { repeated Branch branches = 1; }
@@ -89,7 +91,6 @@ message CreateStudentsBatchResponse {
     repeated Student students = 1; 
 }
 
-// YANGI XABAR TURI QO'SHILDI
 message UpdateStudentsBatchRequest {
     repeated Student students = 1;
 }

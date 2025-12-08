@@ -4,13 +4,12 @@ from . import handlers
 from . import states
 
 def run_bot():
-    # O'ZGARTIRISH: Timeoutlarni oshiramiz (20 soniya)
+    # Timeoutlarni oshiramiz (20 soniya)
     req_kwargs = {
         'read_timeout': 20,
         'connect_timeout': 20
     }
     
-    # request_kwargs ni qo'shamiz
     updater = Updater(settings.telegram_bot_token, use_context=True, request_kwargs=req_kwargs)
     
     dispatcher = updater.dispatcher
@@ -28,9 +27,12 @@ def run_bot():
             states.BRANCH_MFO: [MessageHandler(Filters.text & ~Filters.command, handlers.get_branch_mfo)],
             states.BRANCH_ACC: [MessageHandler(Filters.text & ~Filters.command, handlers.get_branch_account)],
             states.BRANCH_MERCHANT: [MessageHandler(Filters.text & ~Filters.command, handlers.get_branch_merchant)],
+            # YANGI BOSQICH: Topic ID ni olish
+            states.BRANCH_TOPIC_ID: [MessageHandler(Filters.text & ~Filters.command, handlers.get_branch_topic_id)],
         },
         fallbacks=common_fallbacks,
     )
+
     add_student_conv = ConversationHandler(
         entry_points=[MessageHandler(Filters.regex('^👤 O\'quvchi qo\'shish'), handlers.add_student_start)],
         states={

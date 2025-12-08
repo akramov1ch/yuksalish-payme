@@ -1,0 +1,1 @@
+ALTER TABLE branches ADD COLUMN topic_id BIGINT DEFAULT 0;

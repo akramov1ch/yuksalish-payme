@@ -18,6 +18,7 @@ class BotAdminService(bot_admin_pb2_grpc.BotAdminServiceServicer):
         amount_in_som = request.amount / 100
         formatted_amount = f"{amount_in_som:,.2f}".replace(',', ' ').replace('.', ',')
 
+        # Hashtag (#) olib tashlandi, chunki endi Topic bor
         message = (
             f"💸 *Yangi To'lov!*\n\n"
             f"👤 *O'quvchi:* {request.student_name}\n"
@@ -29,13 +30,23 @@ class BotAdminService(bot_admin_pb2_grpc.BotAdminServiceServicer):
             f"⏰ *Vaqt:* {request.payment_time}"
         )
 
-        admin_ids = db.get_all_admins()
-        if self.bot:
-            for admin_id in admin_ids:
-                try:
-                    self.bot.send_message(chat_id=admin_id, text=message, parse_mode='Markdown')
-                except Exception as e:
-                    logger.error(f"{admin_id} ga xabar yuborishda xatolik: {e}")
+        # YANGI MANTIQ: Guruhga yuborish
+        target_group_id = settings.telegram_payment_group_id
+        
+        if self.bot and target_group_id:
+            try:
+                # Agar topic_id 0 bo'lsa, umumiy chatga, aks holda topicga boradi
+                thread_id = request.topic_id if request.topic_id > 0 else None
+                
+                self.bot.send_message(
+                    chat_id=target_group_id, 
+                    text=message, 
+                    parse_mode='Markdown',
+                    message_thread_id=thread_id 
+                )
+                logger.info(f"Xabar guruhga ({target_group_id}) Topic: {thread_id} yuborildi.")
+            except Exception as e:
+                logger.error(f"Guruhga xabar yuborishda xatolik: {e}")
         
         return empty_pb2.Empty()
 

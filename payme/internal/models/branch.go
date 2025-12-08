@@ -12,5 +12,6 @@ type Branch struct {
 	MfoCode       string    `json:"mfo_code" db:"mfo_code"`
 	AccountNumber string    `json:"account_number" db:"account_number"`
 	MerchantID    *string   `json:"merchant_id" db:"merchant_id"`
+	TopicID       int64     `json:"topic_id" db:"topic_id"` // YANGI QO'SHILDI
 	CreatedAt     time.Time `json:"created_at" db:"created_at"`
 }

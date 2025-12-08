@@ -2,7 +2,6 @@ networks:
   yuksalish-net:
     driver: bridge
 
-# BU QISM JUDA MUHIM! Bu Docker'ga ma'lumotlarni saqlash uchun diskda joy ajratishni buyuradi.
 volumes:
   postgres_data:
     driver: local
@@ -16,7 +15,6 @@ services:
       POSTGRES_USER: schooladmin
       POSTGRES_PASSWORD: strongpassword123
       POSTGRES_DB: schooldb
-    # BU QISM JUDA MUHIM! Bu container ichidagi ma'lumotlarni diskdagi 'postgres_data'ga bog'laydi.
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:

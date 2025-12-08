@@ -23,7 +23,8 @@ class Settings(BaseSettings):
     grpc_go_server_address: str
     grpc_bot_server_port: int
     
-    # <<< O'ZGARTIRILGAN QISM BOSHI >>>
+    telegram_payment_group_id: str # YANGI
+
     google_spreadsheet_id: str
     google_worksheet_names: str
     google_creds_file: str
@@ -32,7 +33,6 @@ class Settings(BaseSettings):
     def google_worksheet_name_list(self) -> List[str]:
         """Varaq nomlari satrini toza ro'yxatga o'giradi."""
         return [name.strip() for name in self.google_worksheet_names.split(',') if name.strip()]
-    # <<< O'ZGARTIRILGAN QISM TUGADI >>>
 
     class Config:
         env_file = '.env'

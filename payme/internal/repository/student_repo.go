@@ -33,14 +33,13 @@ func NewStudentRepository(db *pgxpool.Pool) StudentRepository {
 	return &pgStudentRepository{db: db}
 }
 
-// UpdateStudentsBatch - Ommaviy yangilash (AccountID ni ham yangilaydi)
+// UpdateStudentsBatch - Ommaviy yangilash
 func (r *pgStudentRepository) UpdateStudentsBatch(ctx context.Context, tx pgx.Tx, students []*models.Student) error {
 	if len(students) == 0 {
 		return nil
 	}
 
 	batch := &pgx.Batch{}
-	// E'TIBOR BERING: account_id ham SET qismiga qo'shildi ($9)
 	query := `UPDATE students SET 
 				branch_id = $1, parent_name = $2, discount_percent = $3, 
 				full_name = $4, group_name = $5, phone = $6, 
@@ -57,7 +56,7 @@ func (r *pgStudentRepository) UpdateStudentsBatch(ctx context.Context, tx pgx.Tx
 			s.Phone,           // $6
 			s.ContractNumber,  // $7
 			s.Status,          // $8
-			s.AccountID,       // $9 (YANGI QO'SHILDI)
+			s.AccountID,       // $9
 			s.ID,              // $10
 		)
 	}
@@ -233,22 +232,25 @@ func (r *pgStudentRepository) GetStudentByID(ctx context.Context, id uuid.UUID) 
 	return &student, nil
 }
 
+// --- MUHIM O'ZGARISH SHU YERDA ---
 func (r *pgStudentRepository) GetStudentAndBranchByAccountID(ctx context.Context, accountID string) (*models.Student, *models.Branch, error) {
+	// b.topic_id qo'shildi
 	query := `
 		SELECT
 			s.id, s.account_id, s.branch_id, s.parent_name, s.discount_percent,
 			s.balance, s.full_name, s.group_name, s.phone, s.contract_number, s.status, s.created_at, s.updated_at,
-			b.id, b.name, b.monthly_fee, b.mfo_code, b.account_number, b.merchant_id
+			b.id, b.name, b.monthly_fee, b.mfo_code, b.account_number, b.merchant_id, b.topic_id
 		FROM students s
 		JOIN branches b ON s.branch_id = b.id
 		WHERE s.account_id = $1
 	`
 	var student models.Student
 	var branch models.Branch
+	// &branch.TopicID qo'shildi
 	err := r.db.QueryRow(ctx, query, accountID).Scan(
 		&student.ID, &student.AccountID, &student.BranchID, &student.ParentName, &student.DiscountPercent,
 		&student.Balance, &student.FullName, &student.GroupName, &student.Phone, &student.ContractNumber, &student.Status, &student.CreatedAt, &student.UpdatedAt,
-		&branch.ID, &branch.Name, &branch.MonthlyFee, &branch.MfoCode, &branch.AccountNumber, &branch.MerchantID,
+		&branch.ID, &branch.Name, &branch.MonthlyFee, &branch.MfoCode, &branch.AccountNumber, &branch.MerchantID, &branch.TopicID,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -259,22 +261,25 @@ func (r *pgStudentRepository) GetStudentAndBranchByAccountID(ctx context.Context
 	return &student, &branch, nil
 }
 
+// --- MUHIM O'ZGARISH SHU YERDA HAM ---
 func (r *pgStudentRepository) GetStudentAndBranchByStudentID(ctx context.Context, studentID uuid.UUID) (*models.Student, *models.Branch, error) {
+	// b.topic_id qo'shildi
 	query := `
 		SELECT
 			s.id, s.account_id, s.branch_id, s.parent_name, s.discount_percent,
 			s.balance, s.full_name, s.group_name, s.phone, s.contract_number, s.status, s.created_at, s.updated_at,
-			b.id, b.name, b.monthly_fee, b.mfo_code, b.account_number, b.merchant_id
+			b.id, b.name, b.monthly_fee, b.mfo_code, b.account_number, b.merchant_id, b.topic_id
 		FROM students s
 		JOIN branches b ON s.branch_id = b.id
 		WHERE s.id = $1
 	`
 	var student models.Student
 	var branch models.Branch
+	// &branch.TopicID qo'shildi
 	err := r.db.QueryRow(ctx, query, studentID).Scan(
 		&student.ID, &student.AccountID, &student.BranchID, &student.ParentName, &student.DiscountPercent,
 		&student.Balance, &student.FullName, &student.GroupName, &student.Phone, &student.ContractNumber, &student.Status, &student.CreatedAt, &student.UpdatedAt,
-		&branch.ID, &branch.Name, &branch.MonthlyFee, &branch.MfoCode, &branch.AccountNumber, &branch.MerchantID,
+		&branch.ID, &branch.Name, &branch.MonthlyFee, &branch.MfoCode, &branch.AccountNumber, &branch.MerchantID, &branch.TopicID,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {

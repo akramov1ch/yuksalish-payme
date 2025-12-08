@@ -88,7 +88,7 @@ def cancel(update: Update, context: CallbackContext):
     return ConversationHandler.END
 
 # ====================================================================
-# SINXRONIZATSIYA (DEBUG VERSIYA)
+# SINXRONIZATSIYA
 # ====================================================================
 @admin_required
 def sync_with_google_sheet(update: Update, context: CallbackContext):
@@ -114,7 +114,6 @@ def sync_with_google_sheet(update: Update, context: CallbackContext):
             edit_progress("❌ DIQQAT: Bazada hech qanday filial yo'q! Avval bot orqali '➕ Filial qo'shish' tugmasi bilan filial yarating.")
             return
 
-        # Filial nomini ID ga o'girish uchun lug'at
         branch_map = {normalize_text(b.name): b.id for b in all_branches}
         db_students_by_uuid = {s.id: s for s in all_students}
 
@@ -148,28 +147,22 @@ def sync_with_google_sheet(update: Update, context: CallbackContext):
             for i, row in enumerate(rows):
                 row_num = i + START_ROW
                 
-                # Ism bo'sh bo'lsa o'tkazib yuboramiz
                 student_name_raw = safe_get(row, SHEET_COLUMNS_CONFIG["student_name"])
                 if not student_name_raw:
                     continue
 
-                # Filialni aniqlash
                 b_name_raw = safe_get(row, SHEET_COLUMNS_CONFIG["branch_name"])
                 b_name_norm = normalize_text(b_name_raw)
                 b_id = branch_map.get(b_name_norm)
                 
                 if not b_id: 
-                    # logger.warning(f"Qator {row_num}: Filial topilmadi! '{b_name_raw}'")
                     continue 
 
-                # Ma'lumotlarni yig'ish
                 acc_id = safe_get(row, SHEET_COLUMNS_CONFIG["account_id"]).upper().replace(" ", "")
                 uuid_val = safe_get(row, SHEET_COLUMNS_CONFIG["uuid"])
                 
-                # DEBUG LOG: Har bir o'quvchi uchun nima o'qiyotganini ko'ramiz
                 logger.info(f"Qator {row_num}: {student_name_raw} | ID: '{acc_id}' | UUID: '{uuid_val}'")
 
-                # Chegirma
                 try:
                     discount_str = safe_get(row, SHEET_COLUMNS_CONFIG["discount"]).replace('%', '')
                     discount_val = float(discount_str) if discount_str else 0.0
@@ -195,7 +188,6 @@ def sync_with_google_sheet(update: Update, context: CallbackContext):
                     student_data['row_number'] = row_num
                     to_create.append(student_data)
 
-            # --- BAZAGA YUBORISH ---
             if to_update:
                 logger.info(f"Yangilanmoqda: {len(to_update)} ta")
                 grpc_client.update_students_batch(to_update)
@@ -213,10 +205,8 @@ def sync_with_google_sheet(update: Update, context: CallbackContext):
                     created_map = {s.account_id: s for s in created_students}
 
                     for item in to_create:
-                        # Biz yuborgan Account ID bo'yicha natijani qidiramiz
                         res = created_map.get(item['account_id'])
                         
-                        # Agar Account ID bo'sh ketgan bo'lsa va Go yangisini yaratgan bo'lsa
                         if not res:
                              for s in created_students:
                                  if s.branch_id == item['branch_id'] and normalize_text(s.full_name) == normalize_text(item['full_name']):
@@ -224,10 +214,7 @@ def sync_with_google_sheet(update: Update, context: CallbackContext):
                                      break
                         
                         if res:
-                            # UUID ni yozamiz
                             updates_for_sheet.append(gspread.Cell(item['row_number'], SHEET_COLUMNS_CONFIG["uuid"] + 1, res.id))
-                            
-                            # Agar Sheetda ID bo'sh bo'lgan bo'lsa, yangi ID ni ham yozamiz
                             if not item['account_id']:
                                  updates_for_sheet.append(gspread.Cell(item['row_number'], SHEET_COLUMNS_CONFIG["account_id"] + 1, res.account_id))
 
@@ -244,7 +231,7 @@ def sync_with_google_sheet(update: Update, context: CallbackContext):
     edit_progress(final_msg)
     start(update, context)
 
-# --- QOLGAN HANDLERLAR O'ZGARISHSIZ ---
+# --- FILIALLAR ---
 @admin_required
 def list_branches(update: Update, context: CallbackContext):
     branches_info, error = grpc_client.list_branches_with_student_counts()
@@ -260,7 +247,7 @@ def list_branches(update: Update, context: CallbackContext):
         count = info['student_count']
         fee_in_som = branch.monthly_fee
         formatted_fee = f"{fee_in_som:,.0f}".replace(',', ' ')
-        message += f"▪️ *{branch.name}*\n   - Oylik to'lov: {formatted_fee} so'm\n   - O'quvchilar soni: {count} ta\n\n"
+        message += f"▪️ *{branch.name}*\n   - Oylik to'lov: {formatted_fee} so'm\n   - O'quvchilar soni: {count} ta\n   - Topic ID: {branch.topic_id}\n\n"
     update.message.reply_text(message, parse_mode='Markdown')
 
 @admin_required
@@ -295,15 +282,42 @@ def get_branch_account(update: Update, context: CallbackContext):
 def get_branch_merchant(update: Update, context: CallbackContext):
     if update.message.text == "⬅️ Orqaga": return cancel(update, context)
     context.user_data['branch_merchant'] = update.message.text
+    
+    # YANGI: Topic ID so'rash
+    update.message.reply_text(
+        "Ushbu filial uchun guruhdagi Topic ID (Thread ID) ni kiriting:\n"
+        "(Masalan: 12 yoki 453. Agar Topic bo'lmasa 0 kiriting)", 
+        reply_markup=get_back_keyboard()
+    )
+    return states.BRANCH_TOPIC_ID
+
+def get_branch_topic_id(update: Update, context: CallbackContext):
+    if update.message.text == "⬅️ Orqaga": return cancel(update, context)
+    
     try:
-        branch_data = {'name': context.user_data['branch_name'], 'monthly_fee': int(context.user_data['branch_fee']), 'mfo_code': context.user_data['branch_mfo'], 'account_number': context.user_data['branch_account'], 'merchant_id': context.user_data['branch_merchant']}
+        topic_id = int(update.message.text)
+        
+        branch_data = {
+            'name': context.user_data['branch_name'],
+            'monthly_fee': int(context.user_data['branch_fee']),
+            'mfo_code': context.user_data['branch_mfo'],
+            'account_number': context.user_data['branch_account'],
+            'merchant_id': context.user_data['branch_merchant'],
+            'topic_id': topic_id # YANGI
+        }
+        
         new_branch, error = grpc_client.create_branch(branch_data)
         if error:
             update.message.reply_text(f"Xatolik yuz berdi: {error}")
         else:
-            update.message.reply_text(f"✅ Muvaffaqiyatli! '{new_branch.name}' nomli yangi filial qo'shildi.")
-    except (ValueError, KeyError) as e:
-        update.message.reply_text(f"Kiritishda xatolik: {e}. Iltimos, qaytadan boshlang.")
+            update.message.reply_text(f"✅ Muvaffaqiyatli! '{new_branch.name}' nomli yangi filial qo'shildi (Topic ID: {topic_id}).")
+            
+    except ValueError:
+        update.message.reply_text("Iltimos, Topic ID uchun faqat raqam kiriting.")
+        return states.BRANCH_TOPIC_ID
+    except Exception as e:
+        update.message.reply_text(f"Xatolik: {e}")
+
     context.user_data.clear()
     start(update, context)
     return ConversationHandler.END
@@ -356,6 +370,7 @@ def confirm_branch_delete(update: Update, context: CallbackContext):
     update.message.reply_text("Iltimos, quyidagi tugmalardan birini tanlang.", reply_markup=get_back_keyboard())
     return states.DELETE_BRANCH_CONFIRM
 
+# --- O'QUVCHILAR ---
 @admin_required
 def list_students(update: Update, context: CallbackContext):
     branches, branch_error = grpc_client.list_branches()

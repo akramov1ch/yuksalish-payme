@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package bot_admin;
 
-option go_package = "genproto/bot_admin";
+option go_package = "payme/genproto/bot_admin";
 
 import "google/protobuf/empty.proto";
 
@@ -16,6 +16,7 @@ message NotifyPaymentSuccessRequest {
     string group_name = 3;
     int64 amount = 4;
     string payment_time = 5;
-    string account_id = 6;      // BU QATOR BO'LISHI SHART
-    string contract_number = 7; // BU QATOR HAM BO'LISHI SHART
+    string account_id = 6;      
+    string contract_number = 7; 
+    int64 topic_id = 8; // YANGI: Xabar yuboriladigan Topic ID
 }

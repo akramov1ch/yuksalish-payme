@@ -137,11 +137,12 @@ func (s *paymentService) sendPaymentNotification(student *models.Student, branch
 	paymentTimeStr := t.Format("2006-01-02 15:04:05")
 
 	req := &bot_admin.NotifyPaymentSuccessRequest{
-		StudentName: *student.FullName,
-		BranchName:  branch.Name,
-		GroupName:   *student.GroupName,
-		Amount:      amount,
-		PaymentTime: paymentTimeStr,
+		StudentName:    *student.FullName,
+		BranchName:     branch.Name,
+		GroupName:      *student.GroupName,
+		Amount:         amount,
+		PaymentTime:    paymentTimeStr,
+		TopicId:        branch.TopicID, // YANGI: Topic ID ni botga yuboramiz
 	}
 
 	if student.AccountID != nil {
