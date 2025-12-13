@@ -7,7 +7,6 @@ WORKDIR /app
 COPY go.mod go.sum ./
 
 # Bog'liqliklarni yuklab olib, vendor papkasini yaratamiz
-# (Bu qadam lokalda qilingan bo'lsa ham, Docker ichida ham takrorlash ishonchlilikni oshiradi)
 RUN go mod download
 RUN go mod vendor
 
@@ -21,10 +20,14 @@ RUN go build -mod=vendor -ldflags="-w -s" -o /bin/payme ./cmd/api
 # 2-BOSQICH: Yakuniy image'ni yaratish
 FROM alpine:latest
 
-# Kerakli utility'larni o'rnatamiz (migrate uchun)
-RUN apk update && apk add --no-cache ca-certificates curl && \
+# Kerakli utility'larni o'rnatamiz (migrate va tzdata uchun)
+# O'ZGARISH: tzdata qo'shildi
+RUN apk update && apk add --no-cache ca-certificates curl tzdata && \
     curl -L https://github.com/golang-migrate/migrate/releases/download/v4.17.1/migrate.linux-amd64.tar.gz | tar xvz && \
     mv migrate /usr/local/bin/migrate
+
+# Vaqt zonasini Toshkentga sozlash
+ENV TZ=Asia/Tashkent
 
 WORKDIR /app
 

@@ -13,6 +13,12 @@ def run_bot():
     updater = Updater(settings.telegram_bot_token, use_context=True, request_kwargs=req_kwargs)
     
     dispatcher = updater.dispatcher
+    job_queue = updater.job_queue
+
+    # --- AVTOMATIK SINXRONIZATSIYA ---
+    # Har 3600 soniyada (1 soat) ishga tushadi.
+    # first=60 -> Bot ishga tushgandan 60 soniya o'tib birinchi marta ishlaydi.
+    job_queue.run_repeating(handlers.auto_sync_job, interval=3600, first=60)
 
     common_fallbacks = [
         CommandHandler('cancel', handlers.cancel),
@@ -27,7 +33,6 @@ def run_bot():
             states.BRANCH_MFO: [MessageHandler(Filters.text & ~Filters.command, handlers.get_branch_mfo)],
             states.BRANCH_ACC: [MessageHandler(Filters.text & ~Filters.command, handlers.get_branch_account)],
             states.BRANCH_MERCHANT: [MessageHandler(Filters.text & ~Filters.command, handlers.get_branch_merchant)],
-            # YANGI BOSQICH: Topic ID ni olish
             states.BRANCH_TOPIC_ID: [MessageHandler(Filters.text & ~Filters.command, handlers.get_branch_topic_id)],
         },
         fallbacks=common_fallbacks,

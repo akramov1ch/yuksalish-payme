@@ -133,6 +133,7 @@ func (s *paymentService) sendPaymentNotification(student *models.Student, branch
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
+	// time.UnixMilli mahalliy vaqtni (Toshkent) qaytaradi, chunki Dockerda TZ sozlangan
 	t := time.UnixMilli(performTime)
 	paymentTimeStr := t.Format("2006-01-02 15:04:05")
 
@@ -291,11 +292,12 @@ func (s *paymentService) PerformTransaction(ctx context.Context, params Transact
 		return nil, utils.ErrInternalServer
 	}
 
+	// O'ZGARISH: .UTC() olib tashlandi. Endi konteyner vaqti (Toshkent) ishlatiladi.
 	payment := &models.Payment{
 		StudentID:  student.ID,
-		Month:      time.Now().UTC(),
+		Month:      time.Now(), // Toshkent vaqti
 		AmountPaid: transaction.Amount,
-		PaidAt:     time.Now().UTC(),
+		PaidAt:     time.Now(), // Toshkent vaqti
 	}
 	if err := s.paymentRepo.CreatePayment(ctx, tx, payment); err != nil {
 		return nil, utils.ErrInternalServer

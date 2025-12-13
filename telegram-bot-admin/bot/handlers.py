@@ -88,30 +88,25 @@ def cancel(update: Update, context: CallbackContext):
     return ConversationHandler.END
 
 # ====================================================================
-# SINXRONIZATSIYA
+# SINXRONIZATSIYA MANTIQI (UMUMIY)
 # ====================================================================
-@admin_required
-def sync_with_google_sheet(update: Update, context: CallbackContext):
-    progress_message = update.message.reply_text("⏳ Sinxronizatsiya boshlanmoqda... (Loglarni terminalda kuzating)", reply_markup=ReplyKeyboardRemove())
-
-    def edit_progress(text):
-        try:
-            if progress_message.text != text: progress_message.edit_text(text)
-        except: pass
-
+def _execute_sync(status_callback):
+    """
+    Asosiy sinxronizatsiya logikasi.
+    status_callback: (str) -> None funksiyasi (xabar berish uchun)
+    """
     gspread_client, err = get_gsheet_client()
     if err:
-        edit_progress(f"❌ Google Sheets xatosi: {err}")
-        start(update, context)
+        status_callback(f"❌ Google Sheets xatosi: {err}")
         return
 
     try:
-        edit_progress("⏳ Bazadan ma'lumotlar olinmoqda...")
+        status_callback("⏳ Bazadan ma'lumotlar olinmoqda...")
         all_branches, _ = grpc_client.list_branches()
         all_students, _ = grpc_client.list_students()
         
         if not all_branches:
-            edit_progress("❌ DIQQAT: Bazada hech qanday filial yo'q! Avval bot orqali '➕ Filial qo'shish' tugmasi bilan filial yarating.")
+            status_callback("❌ DIQQAT: Bazada hech qanday filial yo'q! Avval bot orqali filial yarating.")
             return
 
         branch_map = {normalize_text(b.name): b.id for b in all_branches}
@@ -119,9 +114,8 @@ def sync_with_google_sheet(update: Update, context: CallbackContext):
 
         spreadsheet = gspread_client.open_by_key(settings.google_spreadsheet_id)
     except Exception as e:
-        edit_progress(f"❌ Xatolik: {e}")
-        logger.error(f"Boshlang'ich xatolik: {e}")
-        start(update, context)
+        status_callback(f"❌ Boshlang'ich xatolik: {e}")
+        logger.error(f"Sync init error: {e}")
         return
 
     total_created = 0
@@ -129,7 +123,7 @@ def sync_with_google_sheet(update: Update, context: CallbackContext):
 
     for sheet_name in settings.google_worksheet_name_list:
         try:
-            edit_progress(f"⏳ '{sheet_name}' varag'i o'qilmoqda...")
+            status_callback(f"⏳ '{sheet_name}' varag'i o'qilmoqda...")
             logger.info(f"--- VARAQ: {sheet_name} ---")
             
             try:
@@ -161,13 +155,14 @@ def sync_with_google_sheet(update: Update, context: CallbackContext):
                 acc_id = safe_get(row, SHEET_COLUMNS_CONFIG["account_id"]).upper().replace(" ", "")
                 uuid_val = safe_get(row, SHEET_COLUMNS_CONFIG["uuid"])
                 
-                logger.info(f"Qator {row_num}: {student_name_raw} | ID: '{acc_id}' | UUID: '{uuid_val}'")
-
                 try:
                     discount_str = safe_get(row, SHEET_COLUMNS_CONFIG["discount"]).replace('%', '')
                     discount_val = float(discount_str) if discount_str else 0.0
                 except:
                     discount_val = 0.0
+
+                # Statusni aniqlash: Sheetda 'amalda' bo'lsa -> True
+                is_active = (safe_get(row, SHEET_COLUMNS_CONFIG["status"]).lower() == 'amalda')
 
                 student_data = {
                     'branch_id': b_id,
@@ -178,7 +173,7 @@ def sync_with_google_sheet(update: Update, context: CallbackContext):
                     'group_name': f"{safe_get(row, SHEET_COLUMNS_CONFIG['class'])}-sinf",
                     'contract_number': safe_get(row, SHEET_COLUMNS_CONFIG["contract_number"]),
                     'discount_percent': discount_val,
-                    'status': (safe_get(row, SHEET_COLUMNS_CONFIG["status"]).lower() == 'amalda')
+                    'status': is_active
                 }
 
                 if uuid_val and uuid_val in db_students_by_uuid:
@@ -194,7 +189,7 @@ def sync_with_google_sheet(update: Update, context: CallbackContext):
                 total_updated += len(to_update)
 
             if to_create:
-                logger.info(f"Yaratilmoqda/Tekshirilmoqda: {len(to_create)} ta")
+                logger.info(f"Yaratilmoqda: {len(to_create)} ta")
                 clean_create_list = [{k: v for k, v in s.items() if k != 'row_number'} for s in to_create]
                 
                 created_students, err = grpc_client.create_students_batch(clean_create_list)
@@ -206,7 +201,7 @@ def sync_with_google_sheet(update: Update, context: CallbackContext):
 
                     for item in to_create:
                         res = created_map.get(item['account_id'])
-                        
+                        # Agar account_id bo'sh bo'lsa, ism va filial orqali topishga harakat qilamiz
                         if not res:
                              for s in created_students:
                                  if s.branch_id == item['branch_id'] and normalize_text(s.full_name) == normalize_text(item['full_name']):
@@ -224,12 +219,36 @@ def sync_with_google_sheet(update: Update, context: CallbackContext):
 
         except Exception as e:
             logger.error(f"Sheet loop error: {e}", exc_info=True)
-            edit_progress(f"⚠️ Xatolik varaqda: {e}")
+            status_callback(f"⚠️ Xatolik varaqda: {e}")
 
-    final_msg = f"✅ Tugadi!\nYangilandi: {total_updated}\nQo'shildi: {total_created}"
+    final_msg = f"✅ Sinxronizatsiya tugadi!\nYangilandi: {total_updated}\nQo'shildi: {total_created}"
     logger.info(final_msg)
-    edit_progress(final_msg)
+    status_callback(final_msg)
+
+# --- Qo'lda ishga tushirish uchun handler ---
+@admin_required
+def sync_with_google_sheet(update: Update, context: CallbackContext):
+    progress_message = update.message.reply_text("⏳ Sinxronizatsiya boshlanmoqda...", reply_markup=ReplyKeyboardRemove())
+
+    def telegram_callback(text):
+        try:
+            if progress_message.text != text:
+                progress_message.edit_text(text)
+        except: pass
+
+    _execute_sync(telegram_callback)
     start(update, context)
+
+# --- Avtomatik (JobQueue) uchun handler ---
+def auto_sync_job(context: CallbackContext):
+    logger.info("⏰ Avtomatik soatlik sinxronizatsiya boshlandi...")
+    
+    def log_callback(text):
+        # Faqat muhim xabarlarni logga chiqaramiz
+        if "✅" in text or "❌" in text or "⚠️" in text:
+            logger.info(f"[AUTO-SYNC] {text}")
+            
+    _execute_sync(log_callback)
 
 # --- FILIALLAR ---
 @admin_required

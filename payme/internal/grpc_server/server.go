@@ -355,6 +355,7 @@ func (s *grpcServer) UpdateStudent(ctx context.Context, req *payment.Student) (*
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid Branch UUID format: %v", err)
 	}
+	
 	studentModel := &models.Student{
 		AccountID:       &req.AccountId,
 		BranchID:        branchUUID,
@@ -364,10 +365,12 @@ func (s *grpcServer) UpdateStudent(ctx context.Context, req *payment.Student) (*
 		GroupName:       &req.GroupName,
 		Phone:           &req.Phone,
 		ContractNumber:  &req.ContractNumber,
+		Status:          req.Status, // <--- MANA SHU QATOR YETISHMAYOTGAN EDI!
 	}
+	
 	updated, err := s.managementService.UpdateStudent(ctx, studentModel)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "Internal server error: %v", err)
+		return nil, handleDBError(err)
 	}
 
 	contractNum := ""
@@ -386,6 +389,7 @@ func (s *grpcServer) UpdateStudent(ctx context.Context, req *payment.Student) (*
 		GroupName:       *updated.GroupName,
 		Phone:           *updated.Phone,
 		ContractNumber:  contractNum,
+		Status:          updated.Status, // Bu yerda to'g'ri qaytayotgan edi, lekin baza yangilanmagani uchun false qaytgan
 	}, nil
 }
 

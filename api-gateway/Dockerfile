@@ -13,7 +13,11 @@ RUN go build -mod=vendor -ldflags="-w -s" -o /bin/api-gateway ./cmd/api
 
 FROM alpine:latest
 
-RUN apk update && apk add --no-cache ca-certificates
+# O'ZGARISH: tzdata qo'shildi
+RUN apk update && apk add --no-cache ca-certificates tzdata
+
+# Vaqt zonasini Toshkentga sozlash
+ENV TZ=Asia/Tashkent
 
 WORKDIR /app
 
