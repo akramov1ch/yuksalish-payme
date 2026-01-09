@@ -162,8 +162,7 @@ def _execute_sync(status_callback):
                     discount_val = 0.0
 
                 # Statusni aniqlash: Sheetda 'amalda' bo'lsa -> True
-                is_active = (safe_get(row, SHEET_COLUMNS_CONFIG["status"]).lower() == 'amalda')
-
+                is_active = True
                 student_data = {
                     'branch_id': b_id,
                     'account_id': acc_id,

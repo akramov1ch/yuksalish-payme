@@ -384,7 +384,7 @@ func (s *paymentService) CheckTransaction(ctx context.Context, params Transactio
 	}
 
 	return response, nil
-}
+}y
 
 func (s *paymentService) GetStatement(ctx context.Context, params *payment.GetStatementRequest) (*payment.GetStatementResponse, error) {
 	transactions, err := s.txRepo.GetTransactionsByTimeRange(ctx, params.From, params.To)
